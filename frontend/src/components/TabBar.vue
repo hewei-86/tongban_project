@@ -48,18 +48,19 @@ function go(item) {
 <style scoped>
 .tabbar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 22rpx;
+  right: 22rpx;
+  bottom: calc(20rpx + env(safe-area-inset-bottom));
   z-index: 90;
   display: flex;
   max-width: 560px;
   margin: 0 auto;
-  padding: 10rpx 8rpx calc(10rpx + env(safe-area-inset-bottom));
+  padding: 10rpx;
   background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(18rpx);
-  border-radius: 30rpx 30rpx 0 0;
-  box-shadow: 0 -8rpx 30rpx rgba(120, 70, 30, 0.08);
+  backdrop-filter: blur(26rpx);
+  border-radius: 40rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 24rpx 50rpx -20rpx rgba(124, 76, 42, 0.42), 0 2rpx 6rpx rgba(124, 76, 42, 0.06);
 }
 
 .tab-item {
@@ -68,17 +69,26 @@ function go(item) {
   flex-direction: column;
   align-items: center;
   gap: 2rpx;
-  padding: 8rpx 0;
+  padding: 12rpx 0 10rpx;
+  border-radius: 30rpx;
   color: #a2917f;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 .tab-item.active {
-  color: #ff6a45;
+  color: #f2552f;
+  background: linear-gradient(165deg, #fff0e6, #ffe2d3);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.9);
 }
 
 .tab-icon {
   font-size: 36rpx;
   line-height: 1.2;
+  transition: transform 0.2s ease;
+}
+
+.tab-item.active .tab-icon {
+  transform: translateY(-2rpx) scale(1.08);
 }
 
 .tab-label {

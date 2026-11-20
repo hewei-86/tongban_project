@@ -769,4 +769,12 @@ function goPage(url) {
   border-radius: 14rpx;
   padding: 12rpx 16rpx;
 }
+
+/* ===== v2 视觉打磨 ===== */
+.child-card { border-radius: 36rpx; border: 1rpx solid #fff1e7; }
+.c-stat { background: linear-gradient(160deg, #fffaf4, #fff0e3); border-radius: 20rpx; }
+.r-cell { background: linear-gradient(160deg, #fffdf9, #fff5ea); border-radius: 20rpx; }
+.limit-box { background: linear-gradient(140deg, #fff8f1, #ffe9d8); border: 1rpx solid #ffe0c8; border-radius: 26rpx; }
+.suggest-box { background: linear-gradient(160deg, #fffdf9, #fff3e6); border: 1rpx solid #ffead8; border-radius: 24rpx; }
+.role-banner { border: 1rpx solid #fff1e7; }
 </style>

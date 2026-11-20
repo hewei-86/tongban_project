@@ -361,4 +361,10 @@ function submit() {
   color: #6a5a4c;
   line-height: 1.5;
 }
+
+/* ===== v2 视觉打磨 ===== */
+.harmony-card { border-radius: 40rpx; background: linear-gradient(140deg, #ffe9d6 0%, #ffe0e9 55%, #f6e7ff 100%); box-shadow: 0 24rpx 50rpx -26rpx rgba(255, 140, 120, 0.55); }
+.harmony-ring { box-shadow: 0 12rpx 28rpx -14rpx rgba(255, 120, 90, 0.5); }
+.eval-card { border-radius: 24rpx; border: 1rpx solid #fff1e7; }
+.star-box { background: linear-gradient(160deg, #fffdf8, #fff4e6); }
 </style>

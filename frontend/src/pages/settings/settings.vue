@@ -617,4 +617,10 @@ function copyRepo() {
   color: #e0663a;
   font-weight: 600;
 }
+
+/* ===== v2 视觉打磨 ===== */
+.profile-card { border-radius: 42rpx; border: 1rpx solid #fff; background: linear-gradient(150deg, #ffffff 0%, #fff4e9 58%, #ffe9dc 100%); box-shadow: 0 24rpx 52rpx -24rpx rgba(124, 76, 42, 0.35); }
+.profile-avatar { box-shadow: 0 14rpx 26rpx -14rpx rgba(255, 95, 62, 0.7); }
+.account-strip { background: rgba(255, 255, 255, 0.72); border: 2rpx dashed #ffd9c4; }
+.data-cell { background: linear-gradient(160deg, #fffaf4, #fff0e3); border-radius: 20rpx; }
 </style>

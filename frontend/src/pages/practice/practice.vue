@@ -656,4 +656,20 @@ function goWrongBook() {
   gap: 24rpx;
   margin-top: 20rpx;
 }
+
+/* ===== v2 视觉打磨 ===== */
+.question-card { border-radius: 36rpx; padding: 34rpx 28rpx 30rpx; border: 1rpx solid #fff1e7; box-shadow: 0 18rpx 44rpx -22rpx rgba(124, 76, 42, 0.3); }
+.q-index { background: linear-gradient(135deg, #ff9a5a, #ff6a45); color: #fff; box-shadow: 0 8rpx 18rpx -10rpx rgba(255, 95, 62, 0.7); }
+.dots { gap: 10rpx; margin: 20rpx 0 26rpx; }
+.dot { height: 10rpx; }
+.q-content { font-size: 38rpx; margin-bottom: 28rpx; }
+.option { border-radius: 24rpx; padding: 24rpx 22rpx; background: #fbf7f2; border: 1rpx solid #f4e8dd; box-shadow: 0 6rpx 16rpx -14rpx rgba(124, 76, 42, 0.3); }
+.option.selected { background: linear-gradient(160deg, #fff6ef, #ffeadc); border-color: #ffb089; box-shadow: 0 10rpx 24rpx -14rpx rgba(255, 122, 77, 0.55); }
+.option.correct { background: linear-gradient(160deg, #f2fcf7, #e2f8ee); border-color: #8fdcb8; }
+.option.wrong { background: linear-gradient(160deg, #fff5f3, #ffe9e6); border-color: #ffb9b0; }
+.feedback { border-radius: 24rpx; padding: 24rpx; margin-top: 24rpx; }
+.feedback.ok { background: linear-gradient(160deg, #f2fcf7, #e4f9ef); border: 1rpx solid #cdeee0; }
+.feedback.no { background: linear-gradient(160deg, #fff8f4, #ffefe9); border: 1rpx solid #ffdccc; }
+.sum-cell { background: linear-gradient(160deg, #fffaf4, #fff0e3); border-radius: 20rpx; }
+.q-helper { margin-top: 20rpx; }
 </style>

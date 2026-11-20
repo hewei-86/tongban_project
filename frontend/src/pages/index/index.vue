@@ -2,12 +2,25 @@
   <view class="page">
     <!-- ============ 顶部主卡 ============ -->
     <view class="hero">
+      <view class="hero-deco deco-a"></view>
+      <view class="hero-deco deco-b"></view>
+
       <view class="hero-row">
-        <view class="hero-avatar">{{ isParent ? '家' : '童' }}</view>
         <view class="hero-copy">
-          <text class="hero-kicker">TONG BAN · 童伴成长</text>
+          <text class="hero-kicker">{{ isParent ? '家长陪伴空间' : 'TONG BAN · 童伴成长' }} · {{ dateLabel }}</text>
           <text class="hero-title">{{ heroTitle }}</text>
           <text class="hero-sub">{{ subTitle }}</text>
+        </view>
+        <view v-if="isParent" class="level-orb parent-orb">
+          <view class="level-orb-inner">
+            <text class="level-orb-icon">👨‍👩‍👧</text>
+          </view>
+        </view>
+        <view v-else class="level-orb" :style="ringStyle">
+          <view class="level-orb-inner">
+            <text class="level-orb-num">{{ heroStats.level }}</text>
+            <text class="level-orb-label">LEVEL</text>
+          </view>
         </view>
       </view>
 
@@ -20,39 +33,35 @@
         </picker>
         <view class="pill" @click="onToggleRole">
           <text class="pill-label">切换视角</text>
-          <text class="pill-value">{{ isParent ? '家长 → 孩子' : '孩子 → 家长' }}</text>
+          <text class="pill-value">{{ isParent ? '家长 ⇄ 孩子' : '孩子 ⇄ 家长' }}</text>
         </view>
       </view>
+    </view>
 
-      <view class="stat-strip">
-        <view class="stat-cell">
-          <text class="stat-cell-icon">⏱</text>
-          <text class="stat-cell-num">{{ heroStats.minutes }}</text>
-          <text class="stat-cell-label">今日分钟</text>
+    <view class="summary-card">
+      <view class="summary-stats">
+        <view class="summary-stat">
+          <text class="summary-num">{{ heroStats.minutes }}</text>
+          <text class="summary-label">今日分钟</text>
         </view>
-        <view class="stat-cell">
-          <text class="stat-cell-icon">★</text>
-          <text class="stat-cell-num">{{ heroStats.points }}</text>
-          <text class="stat-cell-label">{{ isParent ? '孩子积分' : '成长积分' }}</text>
+        <view class="summary-stat">
+          <text class="summary-num">{{ heroStats.points }}</text>
+          <text class="summary-label">{{ isParent ? '孩子积分' : '成长积分' }}</text>
         </view>
-        <view class="stat-cell">
-          <text class="stat-cell-icon">🔥</text>
-          <text class="stat-cell-num">{{ heroStats.streak }}</text>
-          <text class="stat-cell-label">连续天数</text>
+        <view class="summary-stat">
+          <text class="summary-num">{{ heroStats.streak }}</text>
+          <text class="summary-label">连续天数</text>
         </view>
-        <view class="stat-cell">
-          <text class="stat-cell-icon">Lv</text>
-          <text class="stat-cell-num">{{ heroStats.level }}</text>
-          <text class="stat-cell-label">{{ isParent ? '孩子等级' : '当前等级' }}</text>
+        <view class="summary-stat">
+          <text class="summary-num">{{ heroStats.level }}</text>
+          <text class="summary-label">{{ isParent ? '孩子等级' : '当前等级' }}</text>
         </view>
       </view>
-
-      <view v-if="!isParent" class="exp-row">
-        <text>EXP {{ dashboard.exp_in_level || 0 }} / {{ dashboard.exp_next || 100 }}</text>
-        <text>距离升级还差 {{ Math.max(0, (dashboard.exp_next || 100) - (dashboard.exp_in_level || 0)) }}</text>
-      </view>
-      <view v-if="!isParent" class="exp-track">
-        <view class="exp-fill" :style="{ width: (dashboard.exp_percent || 0) + '%' }"></view>
+      <view v-if="!isParent" class="summary-exp">
+        <view class="exp-track">
+          <view class="exp-fill" :style="{ width: (dashboard.exp_percent || 0) + '%' }"></view>
+        </view>
+        <text class="summary-exp-text">{{ dashboard.exp_in_level || 0 }}/{{ dashboard.exp_next || 100 }} EXP</text>
       </view>
     </view>
 
@@ -139,22 +148,22 @@
           </view>
         </view>
         <view class="grid-2">
-          <view class="entry-card" @click="openSubject('math')">
+          <view class="entry-card math" @click="openSubject('math')">
             <view class="entry-icon math">➗</view>
             <text class="entry-name">数学乐园</text>
             <text class="entry-desc">口算 · 应用题</text>
           </view>
-          <view class="entry-card" @click="openSubject('chinese')">
+          <view class="entry-card chinese" @click="openSubject('chinese')">
             <view class="entry-icon chinese">📖</view>
             <text class="entry-name">语文天地</text>
             <text class="entry-desc">识字 · 古诗</text>
           </view>
-          <view class="entry-card" @click="openSubject('english')">
+          <view class="entry-card english" @click="openSubject('english')">
             <view class="entry-icon english">🔤</view>
             <text class="entry-name">英语乐园</text>
             <text class="entry-desc">单词 · 句子</text>
           </view>
-          <view class="entry-card" @click="goTab('/pages/ai/ai')">
+          <view class="entry-card ai" @click="goTab('/pages/ai/ai')">
             <view class="entry-icon ai">🤖</view>
             <text class="entry-name">AI 小老师</text>
             <text class="entry-desc">不会就问我</text>
@@ -354,6 +363,19 @@ const heroStats = computed(() => {
   }
 })
 
+const dateLabel = computed(() => {
+  const date = new Date()
+  const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${week}`
+})
+
+const ringStyle = computed(() => {
+  const percent = isParent.value ? 100 : Math.min(100, Math.max(0, Number(dashboard.value.exp_percent) || 0))
+  return {
+    background: `conic-gradient(#ffffff 0 ${percent}%, rgba(255,255,255,0.25) ${percent}% 100%)`
+  }
+})
+
 const weekDays = computed(() => {
   const calendar = checkin.value.calendar || []
   return calendar.slice(-7).map((item) => ({
@@ -440,9 +462,10 @@ function goAuth() {
   display: flex;
   align-items: center;
   gap: 20rpx;
-  background: linear-gradient(135deg, #fff9f3, #ffefe4);
-  border-radius: 24rpx;
-  padding: 24rpx 22rpx;
+  background: linear-gradient(160deg, #fffdfa 0%, #fff2e7 100%);
+  border: 1rpx solid #ffe8d6;
+  border-radius: 26rpx;
+  padding: 26rpx 22rpx;
   margin-bottom: 20rpx;
 }
 
@@ -466,18 +489,21 @@ function goAuth() {
   flex-direction: column;
   align-items: center;
   gap: 4rpx;
-  width: 44rpx;
+  width: 46rpx;
   padding: 8rpx 0;
-  border-radius: 14rpx;
-  background: rgba(255, 255, 255, 0.7);
+  border-radius: 16rpx;
+  background: #fff;
+  border: 1rpx solid #f6e9dd;
 }
 
 .day-cell.checked {
-  background: #ffe3cf;
+  background: linear-gradient(160deg, #ffe9d2, #ffd9bd);
+  border-color: #ffd0ad;
 }
 
 .day-cell.today {
-  box-shadow: 0 0 0 2rpx #ff9d6e inset;
+  border-color: #ff9d6e;
+  box-shadow: 0 0 0 2rpx rgba(255, 122, 77, 0.18);
 }
 
 .day-num {
@@ -493,13 +519,32 @@ function goAuth() {
 }
 
 .tool-card {
-  background: #fff9f3;
-  border-radius: 22rpx;
-  padding: 22rpx 14rpx;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(160deg, #fffdfa, #fff4ea);
+  border: 1rpx solid #ffead9;
+  border-radius: 24rpx;
+  padding: 24rpx 14rpx 22rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4rpx;
+  box-shadow: 0 10rpx 22rpx -14rpx rgba(124, 76, 42, 0.28);
+}
+
+.tool-card:nth-child(1) {
+  background: linear-gradient(160deg, #fff9ee, #ffeed2);
+  border-color: #ffe0b8;
+}
+
+.tool-card:nth-child(2) {
+  background: linear-gradient(160deg, #f4fcf8, #e4f7ee);
+  border-color: #cfebdd;
+}
+
+.tool-card:nth-child(3) {
+  background: linear-gradient(160deg, #fff6f8, #ffe6ec);
+  border-color: #ffd5df;
 }
 
 .tool-card:active {
@@ -556,14 +601,15 @@ function goAuth() {
 }
 
 .guest-banner {
-  margin-top: 20rpx;
+  margin-top: 24rpx;
   display: flex;
   align-items: center;
   gap: 16rpx;
-  padding: 20rpx 22rpx;
-  border-radius: 24rpx;
-  background: #fff;
-  border: 2rpx dashed #ffd9c4;
+  padding: 22rpx 24rpx;
+  border-radius: 26rpx;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(255, 246, 238, 0.96));
+  border: 2rpx dashed #ffd3b8;
+  box-shadow: 0 12rpx 26rpx -18rpx rgba(124, 76, 42, 0.3);
 }
 
 .guest-main {
@@ -585,4 +631,8 @@ function goAuth() {
   color: #a2917f;
   line-height: 1.4;
 }
+
+/* ===== v2.1 家长视角徽章 ===== */
+.parent-orb { background: rgba(255, 255, 255, 0.2); box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.3); }
+.level-orb-icon { font-size: 50rpx; line-height: 1; }
 </style>

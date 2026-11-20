@@ -231,12 +231,13 @@ function favoriteSub(item) {
 .flash-card::after {
   content: '';
   position: absolute;
-  width: 320rpx;
-  height: 320rpx;
+  width: 420rpx;
+  height: 420rpx;
   border-radius: 50%;
-  background: #fff7ef;
-  top: -140rpx;
-  right: -120rpx;
+  border: 2rpx solid rgba(255, 150, 100, 0.18);
+  background: radial-gradient(circle at 35% 35%, rgba(255, 205, 165, 0.18), rgba(255, 247, 239, 0) 68%);
+  top: -210rpx;
+  right: -170rpx;
   z-index: 0;
 }
 
@@ -447,4 +448,12 @@ function favoriteSub(item) {
   color: #d98a7d;
   padding: 10rpx;
 }
+
+/* ===== v2 视觉打磨 ===== */
+.flash-card { border-radius: 40rpx; border: 1rpx solid #fff1e7; background: radial-gradient(120% 100% at 20% 0%, #fffaf4 0%, #ffffff 62%); }
+.flash-badge { box-shadow: 0 6rpx 14rpx -10rpx rgba(255, 122, 77, 0.5); }
+.poem-card, .idiom-card, .fav-card { border-radius: 32rpx; border: 1rpx solid #fff1e7; }
+.poem-lines { background: linear-gradient(160deg, #fffaf4, #fff3e6); border-radius: 22rpx; }
+.tip-card { border-radius: 28rpx; }
+.fav-card { background: linear-gradient(160deg, #fffdf9, #fffaf4); }
 </style>

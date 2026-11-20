@@ -624,4 +624,17 @@ function goHome() {
   display: block;
   line-height: 1.8;
 }
+
+/* ===== v2 视觉打磨 ===== */
+.challenge-hero { border-radius: 42rpx; box-shadow: 0 28rpx 58rpx -24rpx rgba(124, 92, 255, 0.68); }
+.timer-card { border-radius: 30rpx; border: 1rpx solid #fff1e7; }
+.quiz-card { border-radius: 36rpx; border: 1rpx solid #fff1e7; }
+.quiz-option { border-radius: 24rpx; border: 1rpx solid #f3e7db; background: #fbf7f2; }
+.result-card { border-radius: 42rpx; border: 1rpx solid #fff1e7; }
+.res-cell { background: linear-gradient(160deg, #fffaf4, #fff0e3); border-radius: 20rpx; }
+.play-row { border-color: #f8efe7; }
+
+/* ===== v2.1 计时条配色 ===== */
+.timer-bar .bar-fill { background: linear-gradient(90deg, #a78bfa, #8b5cf6 55%, #ff5f9e); }
+.timer-bar .bar-fill.blue { background: linear-gradient(90deg, #ffb020, #ff5f3c); }
 </style>

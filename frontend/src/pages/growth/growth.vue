@@ -9,9 +9,11 @@
 
     <!-- 等级卡 -->
     <view class="level-card">
-      <view class="level-ring">
-        <text class="level-num">{{ growth.level || 1 }}</text>
-        <text class="level-label">等级</text>
+      <view class="level-ring" :style="levelRingStyle">
+        <view class="level-ring-inner">
+          <text class="level-num">{{ growth.level || 1 }}</text>
+          <text class="level-label">等级</text>
+        </view>
       </view>
       <view class="level-main">
         <view class="level-top">
@@ -199,6 +201,12 @@ const report = ref({})
 
 const unlockedCount = computed(() => achievements.value.filter((item) => item.unlocked).length)
 const totalCurveMinutes = computed(() => curve.value.reduce((sum, item) => sum + item.minutes, 0))
+const levelRingStyle = computed(() => {
+  const percent = Math.min(100, Math.max(0, Number(growth.value.progress_pct) || 0))
+  return {
+    background: `conic-gradient(#ffffff 0 ${percent}%, rgba(255,255,255,0.25) ${percent}% 100%)`
+  }
+})
 const studyDays = computed(() => heatmap.value.filter((item) => item.level > 0).length)
 const heatTip = computed(() => {
   if (!studyDays.value) return '还没有学习记录，今天开始点亮第一格吧。'
@@ -632,4 +640,22 @@ function goPage(url) {
   padding: 16rpx 4rpx;
   border-radius: 16rpx;
 }
+
+/* ===== v2 视觉打磨 ===== */
+.level-card { border-radius: 42rpx; padding: 34rpx 28rpx; box-shadow: 0 28rpx 58rpx -26rpx rgba(255, 95, 62, 0.7); }
+.level-ring { width: 158rpx; height: 158rpx; border-width: 5rpx; box-shadow: inset 0 0 0 10rpx rgba(255, 255, 255, 0.1); }
+.heatmap { gap: 10rpx; }
+.heat-cell { border-radius: 14rpx; }
+.ach-card { border-radius: 24rpx; background: linear-gradient(160deg, #fffdf9, #fff6ec); border: 1rpx solid #ffead8; }
+.ach-card.locked { background: #fbf8f4; }
+.curve-bar { border-radius: 10rpx 10rpx 4rpx 4rpx; }
+.week-cell { background: linear-gradient(160deg, #fffaf4, #fff0e3); border-radius: 20rpx; }
+.quick-link { border: 1rpx solid #fff0e3; }
+
+/* ===== v2.1 等级环 ===== */
+.level-ring { width: 160rpx; height: 160rpx; padding: 5rpx; border: none; background: rgba(255, 255, 255, 0.2); }
+.level-ring-inner { width: 100%; height: 100%; border-radius: 50%; background: linear-gradient(150deg, rgba(255, 150, 100, 0.95), rgba(255, 95, 126, 0.95)); border: 1rpx solid rgba(255, 255, 255, 0.32); box-shadow: inset 0 2rpx 8rpx rgba(255, 255, 255, 0.25); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.level-num { line-height: 1; }
+.level-label { line-height: 1.2; }
+.curve { background: repeating-linear-gradient(to top, transparent 0, transparent 57rpx, #f9f1e8 57rpx, #f9f1e8 58rpx); border-radius: 12rpx; }
 </style>

@@ -29,7 +29,11 @@
       <view v-if="sending" class="chat-row assistant">
         <view class="chat-avatar">师</view>
         <view class="bubble assistant typing">
-          <text class="bubble-text">正在想一想…</text>
+          <view class="typing-dots">
+            <text></text>
+            <text></text>
+            <text></text>
+          </view>
         </view>
       </view>
     </view>
@@ -345,4 +349,22 @@ async function clearChat() {
   color: #b3a394;
   padding: 8rpx 20rpx;
 }
+
+/* ===== v2 视觉打磨 ===== */
+.ai-hero { border-radius: 36rpx; background: linear-gradient(140deg, #f4ecff 0%, #e8f1ff 58%, #ffeef4 100%); border: 1rpx solid #fff; box-shadow: 0 18rpx 42rpx -22rpx rgba(120, 100, 220, 0.38); }
+.ai-avatar { box-shadow: 0 10rpx 22rpx -12rpx rgba(120, 90, 220, 0.5); }
+.chat-card { border-radius: 36rpx; border: 1rpx solid #fff1e7; }
+.bubble { border-radius: 26rpx; box-shadow: 0 8rpx 18rpx -16rpx rgba(80, 50, 30, 0.35); }
+.bubble.assistant { background: linear-gradient(160deg, #fbf7f2, #fffdfa); }
+.composer { border: 1rpx solid #ffe7d6; box-shadow: 0 16rpx 34rpx -20rpx rgba(124, 76, 42, 0.38); }
+.quick-chip { background: #fff; border: 1rpx solid #efe0ff; box-shadow: 0 6rpx 14rpx -10rpx rgba(120, 90, 220, 0.35); }
+.typing-dots { display: flex; align-items: center; gap: 8rpx; padding: 8rpx 4rpx; }
+.typing-dots text { width: 12rpx; height: 12rpx; border-radius: 50%; background: #b9a7d9; animation: typing-blink 1.2s infinite ease-in-out; }
+.typing-dots text:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots text:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing-blink { 0%, 100% { opacity: 0.3; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-4rpx); } }
+
+/* ===== v2.1 聊天区 ===== */
+.chat-card { background: linear-gradient(180deg, #fffdfa 0%, #ffffff 52%, #fffaf4 100%); min-height: 320rpx; }
+.bubble.user { box-shadow: 0 12rpx 24rpx -14rpx rgba(255, 95, 62, 0.5); }
 </style>
