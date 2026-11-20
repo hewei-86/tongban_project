@@ -159,7 +159,7 @@
       <view v-for="(q, idx) in questions" :key="q.id" class="question-card">
         <view class="q-badge">第 {{ idx + 1 }} 题</view>
         <text class="question-text">{{ q.content }}</text>
-        <view v-if="q.options && q.options.length" class="options">
+        <view v-if="q.options?.length" class="options">
           <view
             v-for="option in q.options"
             :key="option"
@@ -385,7 +385,7 @@
         <text class="panel-title">孩子学习概况</text>
         <text class="panel-tag">家长视角</text>
       </view>
-      <view v-if="parentDashboard.children && parentDashboard.children.length" v-for="child in parentDashboard.children" :key="child.user_id" class="child-card">
+      <view v-if="parentDashboard.children?.length" v-for="child in parentDashboard.children" :key="child.user_id" class="child-card">
         <view class="child-head">
           <text class="child-name">{{ child.username }}</text>
           <view class="child-badges">
@@ -655,7 +655,7 @@ async function loadDashboard() {
 
 async function loadTasks() {
   loadingTasks.value = true
-  try { dailyTasks.value = await request(`/api/tasks/daily?user_id=${userId.value}`) }
+  try { dailyTasks.value = (await request(`/api/tasks/daily?user_id=${userId.value}`)) || [] }
   catch (e) { }
   finally { loadingTasks.value = false }
 }
@@ -663,7 +663,7 @@ async function loadTasks() {
 async function loadQuestions() {
   loadingQuestions.value = true
   try {
-    questions.value = await request(`/api/questions?subject=${subject.value}&grade=${grade.value}`)
+    questions.value = (await request(`/api/questions?subject=${subject.value}&grade=${grade.value}`)) || []
     answers.value = {}
   } catch (e) { uni.showToast({ title: '题目加载失败', icon: 'none' }) }
   finally { loadingQuestions.value = false }
@@ -675,7 +675,7 @@ async function generatePractice() {
     const res = await request('/api/practice/generate', 'POST', {
       user_id: userId.value, subject: subject.value, grade: grade.value, count: 5
     })
-    questions.value = res.questions
+    questions.value = (res && res.questions) || []
     answers.value = {}
     uni.showToast({ title: res.demo ? '已从题库随机抽取' : 'AI 生成完成', icon: 'none' })
   } catch (e) { uni.showToast({ title: '生成失败', icon: 'none' }) }
@@ -739,7 +739,7 @@ function askQuick(q) { question.value = q; sendQuestion() }
 
 async function loadWrongBook() {
   loadingWrong.value = true
-  try { wrongBook.value = await request(`/api/wrong-book?user_id=${userId.value}`) }
+  try { wrongBook.value = (await request(`/api/wrong-book?user_id=${userId.value}`)) || [] }
   catch (e) { }
   finally { loadingWrong.value = false }
 }
@@ -775,15 +775,15 @@ async function submitEvaluation() {
     loadHarmony(); loadRecentEvals()
   } catch (e) { evaluationMessage.value = e.message || '提交失败，请检查后端。' }
 }
-async function loadHarmony() { try { harmony.value = await request(`/api/family/harmony?family_id=${familyId}`) } catch (e) { } }
-async function loadRecentEvals() { try { recentEvals.value = await request(`/api/evaluations/list?family_id=${familyId}`) } catch (e) { } }
+async function loadHarmony() { try { harmony.value = (await request(`/api/family/harmony?family_id=${familyId}`)) || {} } catch (e) { } }
+async function loadRecentEvals() { try { recentEvals.value = (await request(`/api/evaluations/list?family_id=${familyId}`)) || [] } catch (e) { } }
 
-async function loadGrowth() { try { growth.value = await request(`/api/growth?user_id=${userId.value}`) } catch (e) { } }
-async function loadAchievements() { try { achievements.value = await request(`/api/achievements?user_id=${userId.value}`) } catch (e) { } }
-async function loadLeaderboard() { try { leaderboard.value = await request(`/api/leaderboard?family_id=${familyId}`) } catch (e) { } }
-async function loadGrowthCurve() { try { growthCurve.value = await request(`/api/growth-curve?user_id=${userId.value}&days=14`) } catch (e) { } }
+async function loadGrowth() { try { growth.value = (await request(`/api/growth?user_id=${userId.value}`)) || {} } catch (e) { } }
+async function loadAchievements() { try { achievements.value = (await request(`/api/achievements?user_id=${userId.value}`)) || [] } catch (e) { } }
+async function loadLeaderboard() { try { leaderboard.value = (await request(`/api/leaderboard?family_id=${familyId}`)) || [] } catch (e) { } }
+async function loadGrowthCurve() { try { growthCurve.value = (await request(`/api/growth-curve?user_id=${userId.value}&days=14`)) || [] } catch (e) { } }
 
-async function loadParentDashboard() { try { parentDashboard.value = await request(`/api/parent/dashboard?family_id=${familyId}`) } catch (e) { uni.showToast({ title: '家长数据加载失败', icon: 'none' }) } }
+async function loadParentDashboard() { try { parentDashboard.value = (await request(`/api/parent/dashboard?family_id=${familyId}`)) || { children: [], active_goals: [], time_limits: [] } } catch (e) { uni.showToast({ title: '家长数据加载失败', icon: 'none' }) } }
 async function createGoal() {
   if (!newGoal.value.title) { uni.showToast({ title: '请填写目标名称', icon: 'none' }); return }
   if (!newGoal.value.date) { uni.showToast({ title: '请选择截止日期', icon: 'none' }); return }
@@ -808,8 +808,8 @@ async function setTimeLimit(childId, daily, warning) {
 
 async function loadReport() {
   try {
-    if (reportPeriod.value === 'week') report.value = await request(`/api/reports/weekly?family_id=${familyId}`)
-    else monthlyReport.value = await request(`/api/reports/monthly?family_id=${familyId}`)
+    if (reportPeriod.value === 'week') report.value = (await request(`/api/reports/weekly?family_id=${familyId}`)) || {}
+    else monthlyReport.value = (await request(`/api/reports/monthly?family_id=${familyId}`)) || {}
   } catch (e) { }
 }
 

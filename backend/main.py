@@ -571,14 +571,14 @@ def generate_practice(data: PracticeGenerateRequest, db: Session = Depends(get_d
     if len(pool) < count:
         pool = db.query(Question).filter(Question.subject == subject).all()
     if not pool:
-        return []
+        return {"questions": []}
     picks = random.sample(pool, min(count, len(pool)))
-    return [{
+    return {"questions": [{
         "id": q.id, "subject": q.subject,
         "subject_label": SUBJECT_MAP.get(q.subject, q.subject),
         "grade": q.grade, "content": q.content,
         "options": json.loads(q.options) if q.options else [],
-    } for q in picks]
+    } for q in picks]}
 
 
 @app.get("/api/parent/dashboard")
