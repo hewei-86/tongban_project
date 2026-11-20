@@ -56,6 +56,14 @@
       </view>
     </view>
 
+    <view v-if="!loggedIn" class="guest-banner">
+      <view class="guest-main">
+        <text class="guest-title">游客体验中</text>
+        <text class="guest-sub">注册本机账号，学习记录可以按账号分开保存</text>
+      </view>
+      <view class="btn btn-soft btn-sm" @click="goAuth">登录 / 注册</view>
+    </view>
+
     <!-- ============ 孩子视角 ============ -->
     <template v-if="!isParent">
       <view class="card">
@@ -303,6 +311,7 @@ import { onShow } from '@dcloudio/uni-app'
 import TabBar from '../../components/TabBar.vue'
 import { api, toast } from '../../services/api.js'
 import { session, switchGrade, toggleRole } from '../../services/session.js'
+import { isLoggedIn } from '../../services/auth.js'
 import { dateOffset, greetingByHour } from '../../utils/format.js'
 
 const grades = ['一年级', '二年级', '三年级']
@@ -314,6 +323,7 @@ const tasks = ref([])
 const checkin = ref({ calendar: [], streak_days: 0, checkin_today: false })
 const parentData = ref({ children: [], active_goals: [] })
 const hasLoaded = ref(false)
+const loggedIn = ref(isLoggedIn())
 
 const child = computed(() => (parentData.value.children || [])[0] || null)
 
@@ -358,6 +368,7 @@ function subjectIcon(subject) {
 }
 
 function loadAll() {
+  loggedIn.value = isLoggedIn()
   try {
     if (isParent.value) {
       parentData.value = api.getParentDashboard()
@@ -417,6 +428,10 @@ function goTab(url) {
 
 function goPage(url) {
   uni.navigateTo({ url })
+}
+
+function goAuth() {
+  uni.navigateTo({ url: '/pages/auth/login/login' })
 }
 </script>
 
@@ -538,5 +553,36 @@ function goPage(url) {
   display: flex;
   flex-direction: column;
   gap: 10rpx;
+}
+
+.guest-banner {
+  margin-top: 20rpx;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  border: 2rpx dashed #ffd9c4;
+}
+
+.guest-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+}
+
+.guest-title {
+  font-size: 25rpx;
+  font-weight: 700;
+  color: #2c241c;
+}
+
+.guest-sub {
+  font-size: 20rpx;
+  color: #a2917f;
+  line-height: 1.4;
 }
 </style>

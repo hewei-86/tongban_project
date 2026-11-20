@@ -3,16 +3,27 @@
     <!-- 个人卡 -->
     <view class="profile-card">
       <view class="profile-top">
-        <view class="profile-avatar">{{ isParent ? '家' : '童' }}</view>
+        <view class="profile-avatar">{{ avatarText }}</view>
         <view class="profile-main">
-          <text class="profile-name">{{ isParent ? '家长账号' : growth.username || '小童' }}</text>
-          <text class="profile-sub">
-            {{ isParent ? '陪孩子一起成长' : `Lv.${growth.level || 1} · ${growth.grade || 1} 年级` }}
-          </text>
+          <text class="profile-name">{{ displayName }}</text>
+          <text class="profile-sub">{{ account ? `账号 ${maskAccount(account.account)} · Lv.${growth.level || 1}` : `游客体验 · Lv.${growth.level || 1}` }}</text>
         </view>
         <view class="profile-points">
           <text class="pp-num">{{ isParent ? familyMinutes : growth.points || 0 }}</text>
           <text class="pp-label">{{ isParent ? '家庭分钟' : '积分' }}</text>
+        </view>
+      </view>
+
+      <view class="account-strip">
+        <text class="account-strip-text">
+          {{ account ? '已登录本机账号，学习记录独立保存' : '登录后，学习记录按账号分开保存' }}
+        </text>
+        <view class="account-strip-actions">
+          <template v-if="!account">
+            <text class="account-link" @click="goLogin">登录</text>
+            <text class="account-link primary" @click="goRegister">注册</text>
+          </template>
+          <text v-else class="account-link danger" @click="doLogout">退出登录</text>
         </view>
       </view>
 
@@ -176,8 +187,10 @@ import TabBar from '../../components/TabBar.vue'
 import { api, toast } from '../../services/api.js'
 import { session, switchGrade, switchRole, syncSession } from '../../services/session.js'
 import { CHILD_ID } from '../../services/engineCore.js'
+import { getCurrentAccount, logout } from '../../services/auth.js'
+import { maskAccount } from '../../services/authRules.js'
 
-const version = '2.0.0'
+const version = '2.1.0'
 const repoUrl = 'https://github.com/hewei-86/tongban_project'
 const grades = ['一年级', '二年级', '三年级']
 
@@ -187,6 +200,7 @@ const parentData = ref({ children: [] })
 const challengeStats = ref({ best: 0 })
 const showImport = ref(false)
 const importText = ref('')
+const account = ref(null)
 
 const isParent = computed(() => session.role === 'parent')
 const gradeLabel = computed(() => grades[(session.grade || 1) - 1] || '一年级')
@@ -195,6 +209,14 @@ const challengeBest = computed(() => challengeStats.value.best || 0)
 const familyMinutes = computed(() =>
   (parentData.value.children || []).reduce((sum, item) => sum + (item.total_minutes || 0), 0)
 )
+const displayName = computed(() => {
+  if (account.value) return account.value.nickname
+  return isParent.value ? '家长账号' : '游客'
+})
+const avatarText = computed(() => {
+  if (account.value) return String(account.value.nickname || '童').slice(0, 1)
+  return isParent.value ? '家' : '童'
+})
 
 function load() {
   stats.value = api.getStorageInfo()
@@ -206,9 +228,36 @@ function load() {
 }
 
 onShow(() => {
+  account.value = getCurrentAccount()
   syncSession()
   load()
 })
+
+function goLogin() {
+  uni.navigateTo({ url: '/pages/auth/login/login' })
+}
+
+function goRegister() {
+  uni.navigateTo({ url: '/pages/auth/register/register' })
+}
+
+async function doLogout() {
+  const confirmed = await new Promise((resolve) => {
+    uni.showModal({
+      title: '退出登录',
+      content: '退出后会回到游客模式，账号数据仍保存在本机，下次登录还能看到。',
+      confirmText: '退出',
+      success: (res) => resolve(Boolean(res.confirm)),
+      fail: () => resolve(false)
+    })
+  })
+  if (!confirmed) return
+  logout()
+  account.value = null
+  syncSession()
+  load()
+  toast('已退出，回到游客模式')
+}
 
 function changeRole(role) {
   if (session.role === role) return
@@ -353,6 +402,49 @@ function copyRepo() {
 .pp-label {
   font-size: 18rpx;
   color: #a2917f;
+}
+
+.account-strip {
+  margin-top: 18rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 18rpx;
+  background: #fff8f1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.account-strip-text {
+  flex: 1;
+  font-size: 21rpx;
+  color: #a2917f;
+  line-height: 1.4;
+}
+
+.account-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  flex-shrink: 0;
+}
+
+.account-link {
+  font-size: 22rpx;
+  color: #e0663a;
+  font-weight: 600;
+  padding: 6rpx 4rpx;
+}
+
+.account-link.primary {
+  background: #ffe4d4;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+}
+
+.account-link.danger {
+  color: #d98a7d;
+  font-weight: 400;
 }
 
 .role-switch {

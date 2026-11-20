@@ -73,7 +73,8 @@ function isoAt(daysAgo, hour = 18, minute = 0, now = new Date()) {
   return date.toISOString()
 }
 
-function createState(now = new Date()) {
+function createState(now = new Date(), options = {}) {
+  const seedDemo = options.seedDemo !== false
   const questions = QUESTION_BANK.map((item, index) => ({
     id: index + 1,
     subject: item.subject,
@@ -96,16 +97,27 @@ function createState(now = new Date()) {
     ],
     family: { id: FAMILY_ID, name: '童伴示范家庭' },
     profiles: [
-      {
-        user_id: CHILD_ID,
-        grade: 1,
-        points: 30,
-        exp: 35,
-        level: 1,
-        study_minutes_total: 22,
-        streak_days: 2,
-        last_checkin_date: dateOffset(-1, now)
-      }
+      seedDemo
+        ? {
+            user_id: CHILD_ID,
+            grade: 1,
+            points: 30,
+            exp: 35,
+            level: 1,
+            study_minutes_total: 22,
+            streak_days: 2,
+            last_checkin_date: dateOffset(-1, now)
+          }
+        : {
+            user_id: CHILD_ID,
+            grade: 1,
+            points: 0,
+            exp: 0,
+            level: 1,
+            study_minutes_total: 0,
+            streak_days: 0,
+            last_checkin_date: null
+          }
     ],
     questions,
     records: [],
@@ -131,7 +143,7 @@ function createState(now = new Date()) {
     }
   }
 
-  seedDemoHistory(state, now)
+  if (seedDemo) seedDemoHistory(state, now)
   return state
 }
 
@@ -200,6 +212,8 @@ function round1(value) {
  */
 export function createEngine(storage, options = {}) {
   const now = options.now || (() => new Date())
+  // 游客模式带示例数据；真实账号从空白开始
+  const seedDemo = options.seedDemo !== false
   let state = loadState()
   commit() // 首次访问就把初始数据写入本地，避免「0 KB」和刷新丢失
   // 示例数据本身已满足部分成就条件，初始化时先静默结算，避免第一次操作时弹窗打断
@@ -209,12 +223,12 @@ export function createEngine(storage, options = {}) {
   function loadState() {
     try {
       const raw = storage.read()
-      if (!raw) return createState(now())
+      if (!raw) return createState(now(), { seedDemo })
       const parsed = JSON.parse(raw)
-      if (!parsed || parsed.version !== STATE_VERSION) return createState(now())
+      if (!parsed || parsed.version !== STATE_VERSION) return createState(now(), { seedDemo })
       return parsed
     } catch (error) {
-      return createState(now())
+      return createState(now(), { seedDemo })
     }
   }
 
@@ -425,6 +439,17 @@ export function createEngine(storage, options = {}) {
     profile.grade = value
     commit()
     return getSession()
+  }
+
+  /** 把账号昵称同步成孩子的显示名（登录 / 注册后调用） */
+  function setChildName(name) {
+    const value = String(name ?? '').trim()
+    if (!value) return { ok: false, username: '' }
+    const child = state.users.find((item) => item.role === 'child')
+    if (!child) return { ok: false, username: '' }
+    child.username = value.slice(0, 20)
+    commit()
+    return { ok: true, username: child.username }
   }
 
   // ==================== 首页 / 学习 ====================
@@ -1261,7 +1286,7 @@ export function createEngine(storage, options = {}) {
   }
 
   function resetAll() {
-    state = createState(now())
+    state = createState(now(), { seedDemo })
     commit()
     return { ok: true }
   }
@@ -1271,6 +1296,7 @@ export function createEngine(storage, options = {}) {
     getSession,
     setRole,
     setGrade,
+    setChildName,
     // 学习
     getDashboard,
     getQuestions,

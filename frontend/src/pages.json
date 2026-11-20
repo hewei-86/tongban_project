@@ -31,6 +31,18 @@
       }
     },
     {
+      "path": "pages/auth/login/login",
+      "style": {
+        "navigationBarTitleText": "登录"
+      }
+    },
+    {
+      "path": "pages/auth/register/register",
+      "style": {
+        "navigationBarTitleText": "注册"
+      }
+    },
+    {
       "path": "pages/parent/parent",
       "style": {
         "navigationBarTitleText": "家长中心"
