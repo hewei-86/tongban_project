@@ -251,11 +251,21 @@ python test_api.py                        # macOS / Linux
 
 ### 用 Docker 部署到自己的服务器
 
+服务器只需要：Linux（推荐 Ubuntu 22.04+）、Docker + Docker Compose、开放 80（有 HTTPS 时再加 443）。
+
 ```bash
+# 在服务器上，进入项目目录后
 docker compose up -d --build
 ```
 
-需要服务器部署时，在仓库 Secrets 中配置 `SERVER_HOST`、`SERVER_USER`、`SERVER_SSH_KEY`、`DEPLOY_PATH`，然后在 Actions 中手动运行 **Deploy to Own Server (optional)**。
+- 前端静态文件由 Nginx 托管，`/api/` 反向代理到后端容器；
+- 后端 **8000 端口不对外暴露**，只走容器内网，避免接口被直接扫描；
+- 数据保存在 Docker 卷 `tongban-data` 中，重新部署不会丢；
+- 访问 `http://<服务器IP>/` 即可；配置域名和 HTTPS 后访问 `https://<域名>/`。
+
+需要域名 + HTTPS 时，可以用 Certbot 在宿主机签发证书，再把 443 反代到容器的 80；或者直接在 Nginx 配置里挂载证书。**HTTPS 还能让浏览器的 WebCrypto 可用**，本机账号的密码会使用更强的 PBKDF2。
+
+需要服务器部署时，在仓库 Secrets 中配置 `SERVER_HOST`、`SERVER_USER`、`SERVER_SSH_KEY`（可选 `DEPLOY_PATH`，默认 `/data/myproject`），然后在 Actions 中手动运行 **Deploy to Own Server (optional)**。
 
 > 说明：当前前端默认使用**本地数据引擎 + 本机账号**，开箱即用；后端的定位是「后续做多设备同步 / 真实账号时的服务端」，目前还没有账号与 JWT 接口。如果你希望前端直接连后端，可以把 `frontend/src/services/api.js` 里的实现替换成 HTTP 请求，页面代码不需要改。
 

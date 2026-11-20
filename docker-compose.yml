@@ -13,8 +13,6 @@ services:
       - tongban-data:/app/data
     expose:
       - "8000"
-    ports:
-      - "8000:8000"
     networks:
       - tongban-net
 

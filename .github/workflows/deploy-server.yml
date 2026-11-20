@@ -136,18 +136,18 @@ jobs:
           echo "=== Container Status ==="
           $DC ps
 
-          # 6. 健康检查（轮询等待后端启动）
+          # 6. 健康检查（后端不直接对外暴露，统一通过 nginx 验证）
           echo ""
           echo "=== Health Checks ==="
-          for i in $(seq 1 15); do
-            if curl -sf http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
-              echo "✅ backend API OK (direct)"
+          for i in $(seq 1 20); do
+            if curl -sf http://127.0.0.1/api/health >/dev/null 2>&1; then
+              echo "✅ nginx proxy -> backend OK"
               break
             fi
-            echo "  waiting for backend... ($i/15)"
+            echo "  waiting for backend... ($i/20)"
             sleep 2
           done
-          curl -sf http://127.0.0.1:8000/api/health >/dev/null 2>&1 || {
+          curl -sf http://127.0.0.1/api/health >/dev/null 2>&1 || {
             echo "❌ backend API FAILED - logs:"
             $DC logs --tail=30 backend
             exit 1
@@ -158,14 +158,6 @@ jobs:
           else
             echo "❌ nginx H5 FAILED"
             $DC logs --tail=30 nginx
-            exit 1
-          fi
-
-          if curl -sf http://127.0.0.1/api/health >/dev/null 2>&1; then
-            echo "✅ nginx proxy -> backend OK"
-          else
-            echo "❌ nginx proxy FAILED"
-            $DC logs --tail=20 nginx
             exit 1
           fi
 
