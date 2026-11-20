@@ -54,6 +54,7 @@ export async function generatePracticeRemote({ subject = 'math', grade = 1, coun
     return {
       questions: Array.isArray(payload.questions) ? payload.questions : [],
       aiGenerated: Boolean(payload.ai_generated),
+      aiEnabled: Boolean(payload.ai_enabled),
       demo: payload.demo !== false
     }
   } catch (error) {

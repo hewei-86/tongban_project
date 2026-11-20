@@ -741,13 +741,13 @@ def generate_practice(data: PracticeGenerateRequest, db: Session = Depends(get_d
                 payload["explanation"] = row.explanation
             created.append(payload)
         db.commit()
-        return {"questions": created, "demo": False, "ai_generated": True}
+        return {"questions": created, "demo": False, "ai_generated": True, "ai_enabled": bool(DASHSCOPE_API_KEY)}
 
     pool = db.query(Question).filter(Question.subject == subject, Question.grade <= grade).all()
     if len(pool) < count:
         pool = db.query(Question).filter(Question.subject == subject).all()
     if not pool:
-        return {"questions": [], "demo": True, "ai_generated": False}
+        return {"questions": [], "demo": True, "ai_generated": False, "ai_enabled": bool(DASHSCOPE_API_KEY)}
     picks = random.sample(pool, min(count, len(pool)))
     questions = []
     for q in picks:
@@ -764,7 +764,7 @@ def generate_practice(data: PracticeGenerateRequest, db: Session = Depends(get_d
             payload["answer"] = q.answer
             payload["explanation"] = q.explanation
         questions.append(payload)
-    return {"questions": questions, "demo": True, "ai_generated": False}
+    return {"questions": questions, "demo": True, "ai_generated": False, "ai_enabled": bool(DASHSCOPE_API_KEY)}
 
 
 @app.get("/api/parent/dashboard")

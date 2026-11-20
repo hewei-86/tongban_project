@@ -251,7 +251,9 @@ async function fetchAiPractice() {
           questions: imported,
           note: remote.aiGenerated
             ? 'AI 已生成新题（通义千问）'
-            : '服务器还没配置 AI Key，已按年级抽取题库'
+            : remote.aiEnabled
+              ? 'AI 暂时没出题成功，已按年级抽取题库'
+              : '服务器还没配置 AI Key，已按年级抽取题库'
         }
       }
     } catch (error) {
