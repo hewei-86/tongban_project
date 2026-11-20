@@ -93,6 +93,19 @@ jobs:
           tar -xzf /tmp/tongban-infra.tar.gz
           ls -la docker-compose.yml nginx/nginx.conf
 
+          # 1.5 自动创建 .env 占位（如果不存在）
+          if [ ! -f .env ]; then
+            echo ">>> Creating empty .env placeholder..."
+            cat > .env <<'ENVEOF'
+# === 通义千问 (DashScope) 配置 ===
+# 免费申请：https://bailian.console.aliyun.com/
+DASHSCOPE_API_KEY=
+QWEN_MODEL=qwen-turbo
+ENVEOF
+          else
+            echo ">>> .env already exists, keeping it"
+          fi
+
           # 2. 后端代码（保留数据库和 .env）
           echo ">>> Extracting backend..."
           tar -xzf /tmp/tongban-backend.tar.gz -C backend

@@ -5,11 +5,9 @@ services:
       dockerfile: Dockerfile
     container_name: tongban-backend
     restart: always
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=sqlite:////app/data/tongban.db
-      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
       - QWEN_MODEL=${QWEN_MODEL:-qwen-turbo}
     volumes:
       - tongban-data:/app/data
