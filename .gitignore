@@ -1,0 +1,47 @@
+
+# 环境变量和密钥
+.env
+.env.*
+!.env.example
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Python 虚拟环境
+.venv/
+venv/
+env/
+
+# 测试和缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 前端依赖
+node_modules/
+
+# 前端构建产物
+frontend/dist/
+frontend/unpackage/
+
+# 日志
+*.log
+logs/
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 编辑器配置
+.idea/
+.vscode/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 部署压缩包
+*.zip

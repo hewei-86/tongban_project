@@ -1,0 +1,16 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "童伴成长",
+        "navigationBarBackgroundColor": "#FFF7F1",
+        "navigationBarTextStyle": "black"
+      }
+    }
+  ],
+  "globalStyle": {
+    "backgroundColor": "#FFF7F1",
+    "navigationBarTitleText": "童伴成长"
+  }
+}
