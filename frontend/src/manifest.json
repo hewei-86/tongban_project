@@ -1,10 +1,24 @@
 {
   "name": "童伴成长",
   "appid": "__UNI__TONG_BAN",
-  "description": "面向小学低年级的AI学习与亲子成长助手",
-  "versionName": "1.0.0",
-  "versionCode": "100",
+  "description": "面向小学低年级的 AI 学习与亲子陪伴练习站",
+  "versionName": "2.0.0",
+  "versionCode": "200",
   "transformPx": false,
+  "h5": {
+    "title": "童伴成长 · AI 学习与亲子陪伴",
+    "router": {
+      "mode": "hash"
+    },
+    "optimization": {
+      "treeShaking": {
+        "enable": true
+      }
+    }
+  },
+  "uniStatistics": {
+    "enable": false
+  },
   "mp-weixin": {
     "appid": "",
     "setting": {

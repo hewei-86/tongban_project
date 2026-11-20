@@ -181,3 +181,14 @@ class TimeLimit(Base):
     daily_limit_minutes: Mapped[int] = mapped_column(Integer, default=60)
     warning_minutes: Mapped[int] = mapped_column(Integer, default=45)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class ChallengePlay(Base):
+    __tablename__ = "challenge_plays"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    score: Mapped[int] = mapped_column(Integer, default=0)
+    correct: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    seconds: Mapped[int] = mapped_column(Integer, default=60)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

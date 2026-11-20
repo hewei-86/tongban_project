@@ -1,0 +1,177 @@
+name: Deploy to Own Server (optional)
+
+# 可选方案：把 H5 + FastAPI 后端部署到自己的服务器（Docker + Nginx）。
+# 需要在仓库 Secrets 中配置：
+#   SERVER_HOST   服务器 IP 或域名
+#   SERVER_USER   SSH 用户名
+#   SERVER_SSH_KEY 私钥内容
+#   DEPLOY_PATH   服务器部署目录，例如 /data/tongban
+# 配置完成后再在 Actions 页面手动点击 Run workflow。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build H5
+        working-directory: frontend
+        env:
+          # 自有服务器由 Nginx 托管在根路径
+          UNI_H5_BASE: /
+        run: npm run build:h5
+
+      - name: Verify H5 build
+        run: |
+          test -f frontend/dist/build/h5/index.html
+          echo "H5 build OK"
+
+      - name: Setup SSH
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+
+      - name: Package artifacts
+        run: |
+          tar --exclude='.env' --exclude='*.db' --exclude='*.zip' --exclude='.venv' \
+              -czf /tmp/backend.tar.gz -C backend .
+          tar -czf /tmp/h5.tar.gz -C frontend/dist/build/h5 .
+          tar -czf /tmp/infra.tar.gz docker-compose.yml nginx/
+          echo "Package sizes:"
+          ls -lh /tmp/backend.tar.gz /tmp/h5.tar.gz /tmp/infra.tar.gz
+
+      - name: Upload to server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          scp /tmp/backend.tar.gz  "$SERVER_USER@$SERVER_HOST:/tmp/tongban-backend.tar.gz"
+          scp /tmp/h5.tar.gz      "$SERVER_USER@$SERVER_HOST:/tmp/tongban-h5.tar.gz"
+          scp /tmp/infra.tar.gz   "$SERVER_USER@$SERVER_HOST:/tmp/tongban-infra.tar.gz"
+          echo "Upload done"
+
+      - name: Deploy on server
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          # 用引号括住 heredoc 结束符，防止本地 shell 展开 $变量
+          ssh "$SERVER_USER@$SERVER_HOST" 'bash -s' <<'ENDSSH'
+          set -e
+
+          DEPLOY="${DEPLOY_PATH:-/data/myproject}"
+          echo ">>> Target: $DEPLOY"
+
+          # 确保 docker compose 可用（兼容 v1 和 v2）
+          if docker compose version >/dev/null 2>&1; then
+            DC="docker compose"
+          else
+            DC="docker-compose"
+          fi
+          echo ">>> Using: $DC"
+
+          mkdir -p "$DEPLOY/backend" "$DEPLOY/frontend/site" "$DEPLOY/nginx"
+          cd "$DEPLOY"
+
+          # 1. 基础设施（docker-compose + nginx）
+          echo ">>> Extracting infra..."
+          tar -xzf /tmp/tongban-infra.tar.gz
+          ls -la docker-compose.yml nginx/nginx.conf
+
+          # 1.5 自动创建 .env 占位（如果不存在）
+          if [ ! -f .env ]; then
+            echo ">>> Creating empty .env placeholder..."
+            printf '%s\n' \
+              '# === 通义千问 (DashScope) 配置 ===' \
+              '# 免费申请：https://bailian.console.aliyun.com/' \
+              'DASHSCOPE_API_KEY=' \
+              'QWEN_MODEL=qwen-turbo' \
+              > .env
+          else
+            echo ">>> .env already exists, keeping it"
+          fi
+
+          # 2. 后端代码（保留数据库和 .env）
+          echo ">>> Extracting backend..."
+          tar -xzf /tmp/tongban-backend.tar.gz -C backend
+
+          # 3. H5 前端
+          echo ">>> Extracting H5..."
+          find frontend/site -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          tar -xzf /tmp/tongban-h5.tar.gz -C frontend/site
+
+          # 4. 停止旧容器
+          echo ">>> Stopping old containers..."
+          $DC down --remove-orphans 2>/dev/null || true
+
+          # 5. 构建 + 启动
+          echo ">>> Building backend image..."
+          $DC build backend
+          echo ">>> Starting containers..."
+          $DC up -d
+
+          echo ""
+          echo "=== Container Status ==="
+          $DC ps
+
+          # 6. 健康检查（轮询等待后端启动）
+          echo ""
+          echo "=== Health Checks ==="
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+              echo "✅ backend API OK (direct)"
+              break
+            fi
+            echo "  waiting for backend... ($i/15)"
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8000/api/health >/dev/null 2>&1 || {
+            echo "❌ backend API FAILED - logs:"
+            $DC logs --tail=30 backend
+            exit 1
+          }
+
+          if curl -sf http://127.0.0.1/ >/dev/null 2>&1; then
+            echo "✅ nginx H5 OK"
+          else
+            echo "❌ nginx H5 FAILED"
+            $DC logs --tail=30 nginx
+            exit 1
+          fi
+
+          if curl -sf http://127.0.0.1/api/health >/dev/null 2>&1; then
+            echo "✅ nginx proxy -> backend OK"
+          else
+            echo "❌ nginx proxy FAILED"
+            $DC logs --tail=20 nginx
+            exit 1
+          fi
+
+          # 7. 清理
+          rm -f /tmp/tongban-backend.tar.gz /tmp/tongban-h5.tar.gz /tmp/tongban-infra.tar.gz
+
+          echo ""
+          echo "🎉 部署成功！"
+          ENDSSH

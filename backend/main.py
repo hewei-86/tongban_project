@@ -16,12 +16,12 @@ from database import Base, engine, get_db, SessionLocal
 from models import (
     User, Family, FamilyMember, ChildProfile, Question, LearningRecord, Evaluation, AiChat,
     CheckIn, DailyTask, UserTaskProgress, WrongQuestion, Achievement, UserAchievement,
-    GrowthRecord, ParentGoal, TimeLimit,
+    GrowthRecord, ParentGoal, TimeLimit, ChallengePlay,
 )
 from schemas import (
     CheckInRequest, TaskCompleteRequest, LearningSubmitRequest,
-    AiChatRequest, WrongBookSubmitRequest, GoalCreateRequest,
-    TimeLimitRequest, PracticeGenerateRequest, EvaluationCreateRequest,
+    AiChatRequest, GoalCreateRequest, TimeLimitRequest, PracticeGenerateRequest,
+    EvaluationCreateRequest, WrongRetryRequest, ChallengeSubmitRequest,
 )
 
 load_dotenv(verbose=True)
@@ -58,16 +58,19 @@ def call_qwen(messages: list, temperature: float = 0.7) -> str | None:
         print(f"[qwen] call failed: {e}")
     return None
 
+ALLOW_ORIGINS = [item.strip() for item in os.environ.get("ALLOW_ORIGINS", "*").split(",") if item.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOW_ORIGINS or ["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 TODAY = lambda: datetime.now().strftime("%Y-%m-%d")
-SUBJECT_MAP = {"math": "数学", "chinese": "语文", "english": "英语", "数学": "math", "语文": "chinese", "英语": "english"}
+SUBJECT_MAP = {"math": "数学", "chinese": "语文", "english": "英语"}
+SUBJECT_ALIASES = {"数学": "math", "语文": "chinese", "英语": "english"}
 
 
 def calc_level(exp: int) -> int:
@@ -142,6 +145,11 @@ def check_achievements(db: Session, user_id: int):
             ok = True
         elif ach.condition_type == "checkin_count" and checkins >= val:
             ok = True
+        elif ach.condition_type == "challenge_best":
+            best = db.query(func.max(ChallengePlay.score)).filter(
+                ChallengePlay.user_id == user_id
+            ).scalar() or 0
+            ok = best >= val
         if ok:
             db.add(UserAchievement(user_id=user_id, achievement_id=ach.id))
             profile.points += ach.points_reward
@@ -220,6 +228,8 @@ def seed_data():
                 ("学习小达人", "累计学习 120 分钟", "clock", "total_minutes", 120, 60),
                 ("亲子互动", "完成 5 次亲子互评", "heart", "evaluations", 5, 40),
                 ("等级晋升", "升到 3 级", "rocket", "reach_level", 3, 100),
+                ("速算小能手", "速算挑战得分达到 10", "bolt", "challenge_best", 10, 30),
+                ("速算达人", "速算挑战得分达到 20", "medal", "challenge_best", 20, 60),
             ]
             for n, d, i, c, v, p in seed_ach:
                 db.add(Achievement(name=n, description=d, icon=i, condition_type=c, condition_value=v, points_reward=p))
@@ -305,6 +315,7 @@ def dashboard(user_id: int = Query(default=2), db: Session = Depends(get_db)):
 
 @app.get("/api/questions")
 def questions(subject: str = "math", grade: int = 1, db: Session = Depends(get_db)):
+    subject = SUBJECT_ALIASES.get(subject, subject)
     if subject not in {"math", "chinese", "english"}:
         raise HTTPException(400, "不支持的学科 (math/chinese/english)")
     rows = db.query(Question).filter(Question.subject == subject, Question.grade == grade).all()
@@ -335,6 +346,7 @@ def submit_learning(data: LearningSubmitRequest, db: Session = Depends(get_db)):
     points_added = exp_added = 0
     new_level = None
     level_up = False
+    newly = []
     if profile:
         profile.study_minutes_total += minutes
         if is_correct:
@@ -370,14 +382,21 @@ def submit_learning(data: LearningSubmitRequest, db: Session = Depends(get_db)):
         "exp_added": exp_added,
         "level": profile.level if profile else 1,
         "level_up": level_up,
+        "new_achievements": [
+            {"id": a.id, "name": a.name, "icon": a.icon, "points_reward": a.points_reward}
+            for a in newly
+        ],
     }
 
 
 @app.get("/api/tasks/daily")
-def daily_tasks(grade: int = Query(default=1), db: Session = Depends(get_db)):
+def daily_tasks(
+    grade: int = Query(default=1),
+    user_id: int = Query(default=2),
+    db: Session = Depends(get_db),
+):
     today = TODAY()
-    task_ids = []
-    rows = db.query(DailyTask).filter(DailyTask.grade <= grade).distinct(DailyTask.subject).all()
+    rows = db.query(DailyTask).filter(DailyTask.grade <= grade).order_by(DailyTask.grade).all()
     picked = {}
     for t in rows:
         if t.subject not in picked or t.grade > picked[t.subject].grade:
@@ -386,18 +405,18 @@ def daily_tasks(grade: int = Query(default=1), db: Session = Depends(get_db)):
     for t in tasks:
         prog = db.query(UserTaskProgress).filter(
             UserTaskProgress.task_id == t.id,
-            UserTaskProgress.user_id == 2,
+            UserTaskProgress.user_id == user_id,
             UserTaskProgress.task_date == today,
         ).first()
         if not prog:
-            db.add(UserTaskProgress(task_id=t.id, user_id=2, task_date=today,
+            db.add(UserTaskProgress(task_id=t.id, user_id=user_id, task_date=today,
                                     completed_count=0, is_completed=False))
     db.commit()
     result = []
     for t in tasks:
         prog = db.query(UserTaskProgress).filter(
             UserTaskProgress.task_id == t.id,
-            UserTaskProgress.user_id == 2,
+            UserTaskProgress.user_id == user_id,
             UserTaskProgress.task_date == today,
         ).first()
         result.append({
@@ -457,8 +476,14 @@ def do_checkin(data: CheckInRequest, db: Session = Depends(get_db)):
         CheckIn.user_id == data.user_id, CheckIn.checkin_date == today
     ).first()
     if existing:
-        return {"already": True, "streak_days": profile.streak_days,
-                "points_earned": existing.points_earned}
+        return {
+            "ok": True,
+            "already": True,
+            "message": "今天已经签过到啦，明天见！",
+            "streak_days": profile.streak_days,
+            "points_earned": 0,
+            "new_achievements": [],
+        }
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     prev = db.query(CheckIn).filter(CheckIn.user_id == data.user_id, CheckIn.checkin_date == yesterday).first()
     profile.streak_days = (profile.streak_days + 1) if prev else 1
@@ -469,7 +494,17 @@ def do_checkin(data: CheckInRequest, db: Session = Depends(get_db)):
     add_growth_record(db, data.user_id, points=points_earned)
     newly = check_achievements(db, data.user_id) or []
     db.commit()
-    return {"already": False, "streak_days": profile.streak_days, "points_earned": points_earned}
+    return {
+        "ok": True,
+        "already": False,
+        "message": f"签到成功！连续 {profile.streak_days} 天，积分 +{points_earned}",
+        "streak_days": profile.streak_days,
+        "points_earned": points_earned,
+        "new_achievements": [
+            {"id": a.id, "name": a.name, "icon": a.icon, "points_reward": a.points_reward}
+            for a in newly
+        ],
+    }
 
 
 @app.get("/api/checkin/streak")
@@ -514,14 +549,45 @@ def wrong_book(user_id: int = Query(default=2), db: Session = Depends(get_db)):
 
 
 @app.post("/api/wrong-book/retry/{wrong_id}")
-def retry_wrong(wrong_id: int, db: Session = Depends(get_db)):
+def retry_wrong(wrong_id: int, data: WrongRetryRequest, db: Session = Depends(get_db)):
     w = db.get(WrongQuestion, wrong_id)
     if not w:
         raise HTTPException(404, "错题不存在")
     q = db.get(Question, w.question_id)
-    return {"id": w.id, "question_text": q.content if q else "",
-            "subject": q.subject if q else "", "correct_answer": q.answer if q else "",
-            "explanation": q.explanation if q else "", "user_answer": w.wrong_answer}
+    if not q:
+        raise HTTPException(404, "题目不存在")
+
+    is_correct = data.answer.strip().lower() == q.answer.strip().lower()
+    profile = db.query(ChildProfile).filter(ChildProfile.user_id == w.user_id).first()
+    if is_correct:
+        w.is_mastered = True
+        w.last_reviewed_at = datetime.now()
+        if profile:
+            profile.points += 3
+            profile.exp += 6
+            profile.level = calc_level(profile.exp)
+    else:
+        w.wrong_count += 1
+        w.is_mastered = False
+
+    db.add(LearningRecord(user_id=w.user_id, question_id=q.id, answer=data.answer,
+                          is_correct=is_correct, minutes=1))
+    if profile:
+        profile.study_minutes_total += 1
+    add_growth_record(db, w.user_id, exp=6 if is_correct else 0, points=3 if is_correct else 0,
+                      minutes=1, correct=1 if is_correct else 0, total=1)
+    newly = check_achievements(db, w.user_id) or []
+    db.commit()
+    return {
+        "is_correct": is_correct,
+        "answer": q.answer,
+        "explanation": q.explanation,
+        "is_mastered": w.is_mastered,
+        "new_achievements": [
+            {"id": a.id, "name": a.name, "icon": a.icon, "points_reward": a.points_reward}
+            for a in newly
+        ],
+    }
 
 
 @app.post("/api/wrong-book/master/{wrong_id}")
@@ -544,9 +610,6 @@ def remove_wrong(wrong_id: int, db: Session = Depends(get_db)):
     db.delete(w)
     db.commit()
     return {"ok": True}
-
-
-SUBJECT_MAP = {"math": "数学", "chinese": "语文", "english": "英语"}
 
 
 def ai_reply(message: str, grade: int) -> tuple[str, bool]:
@@ -604,7 +667,9 @@ def ai_chat(data: AiChatRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/practice/generate")
 def generate_practice(data: PracticeGenerateRequest, db: Session = Depends(get_db)):
-    subject = data.subject if data.subject in ("math", "chinese", "english") else "math"
+    subject = SUBJECT_ALIASES.get(data.subject, data.subject)
+    if subject not in ("math", "chinese", "english"):
+        subject = "math"
     grade = data.grade
     count = min(data.count, 10)
     subject_label = SUBJECT_MAP.get(subject, subject)
@@ -647,19 +712,29 @@ def generate_practice(data: PracticeGenerateRequest, db: Session = Depends(get_d
             ai_questions = []
 
     if ai_questions:
-        return {
-            "questions": [{
-                "id": 0, "subject": subject,
+        created = []
+        for item in ai_questions:
+            row = Question(
+                subject=subject,
+                grade=grade,
+                content=item["content"],
+                answer=item["answer"],
+                explanation=item["explanation"],
+                options=json.dumps(item["options"], ensure_ascii=False) if item["options"] else None,
+            )
+            db.add(row)
+            db.flush()
+            created.append({
+                "id": row.id,
+                "subject": subject,
                 "subject_label": subject_label,
                 "grade": grade,
-                "content": q["content"],
-                "answer": q["answer"],
-                "explanation": q["explanation"],
-                "options": q["options"],
+                "content": row.content,
+                "options": item["options"],
                 "ai_generated": True,
-            } for q in ai_questions],
-            "demo": False,
-        }
+            })
+        db.commit()
+        return {"questions": created, "demo": False}
 
     pool = db.query(Question).filter(Question.subject == subject, Question.grade <= grade).all()
     if len(pool) < count:
@@ -778,6 +853,18 @@ def set_time_limit(data: TimeLimitRequest, db: Session = Depends(get_db)):
     db.commit()
     return {"ok": True, "daily_limit_minutes": tl.daily_limit_minutes,
             "warning_minutes": tl.warning_minutes}
+
+
+@app.get("/api/time-limit")
+def get_time_limit(child_user_id: int = Query(default=2), db: Session = Depends(get_db)):
+    tl = db.query(TimeLimit).filter(TimeLimit.child_user_id == child_user_id).first()
+    if not tl:
+        return {"child_user_id": child_user_id, "daily_limit_minutes": 60, "warning_minutes": 45}
+    return {
+        "child_user_id": tl.child_user_id,
+        "daily_limit_minutes": tl.daily_limit_minutes,
+        "warning_minutes": tl.warning_minutes,
+    }
 
 
 @app.post("/api/goals")
@@ -1019,6 +1106,65 @@ def family_leaderboard(family_id: int = 1, db: Session = Depends(get_db)):
     for i, r in enumerate(result):
         r["rank"] = i + 1
     return result
+
+
+@app.post("/api/challenge/submit")
+def submit_challenge(data: ChallengeSubmitRequest, db: Session = Depends(get_db)):
+    profile = db.query(ChildProfile).filter(ChildProfile.user_id == data.user_id).first()
+    if not profile:
+        raise HTTPException(404, "孩子档案不存在")
+
+    best_before = db.query(func.max(ChallengePlay.score)).filter(
+        ChallengePlay.user_id == data.user_id
+    ).scalar() or 0
+    db.add(ChallengePlay(
+        user_id=data.user_id, score=data.score, correct=data.correct,
+        total=data.total, seconds=data.seconds,
+    ))
+    is_new_best = data.score > best_before
+    points = data.correct * 2 + (5 if is_new_best else 0)
+    exp = data.correct * 3
+    profile.points += points
+    profile.exp += exp
+    profile.level = calc_level(profile.exp)
+    add_growth_record(
+        db, data.user_id, exp=exp, points=points,
+        minutes=max(1, round(data.seconds / 60)),
+        correct=data.correct, total=data.total,
+    )
+    newly = check_achievements(db, data.user_id) or []
+    db.commit()
+    return {
+        "best": max(best_before, data.score),
+        "is_new_best": is_new_best,
+        "points_earned": points,
+        "exp_earned": exp,
+        "new_achievements": [
+            {"id": a.id, "name": a.name, "icon": a.icon, "points_reward": a.points_reward}
+            for a in newly
+        ],
+    }
+
+
+@app.get("/api/challenge/best")
+def challenge_best(user_id: int = Query(default=2), db: Session = Depends(get_db)):
+    rows = db.query(ChallengePlay).filter(
+        ChallengePlay.user_id == user_id
+    ).order_by(ChallengePlay.score.desc(), ChallengePlay.created_at.desc()).limit(8).all()
+    best = db.query(func.max(ChallengePlay.score)).filter(
+        ChallengePlay.user_id == user_id
+    ).scalar() or 0
+    total_plays = db.query(ChallengePlay).filter(ChallengePlay.user_id == user_id).count()
+    return {
+        "best": best,
+        "total_plays": total_plays,
+        "plays": [{
+            "date": row.created_at.strftime("%Y-%m-%d"),
+            "score": row.score,
+            "correct": row.correct,
+            "total": row.total,
+        } for row in rows],
+    }
 
 
 if __name__ == "__main__":

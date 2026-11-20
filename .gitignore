@@ -1,4 +1,3 @@
-
 # 环境变量和密钥
 .env
 .env.*
@@ -25,6 +24,11 @@ node_modules/
 # 前端构建产物
 frontend/dist/
 frontend/unpackage/
+
+# 本地截图 / 临时产物
+.tmp-site/
+.tmp/
+*.local
 
 # 日志
 *.log

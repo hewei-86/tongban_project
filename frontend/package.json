@@ -1,13 +1,15 @@
 {
   "name": "tongban-frontend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
+  "description": "童伴成长：小学低年级 AI 学习与亲子陪伴练习站（uni-app + Vue 3）",
   "scripts": {
     "dev:h5": "uni",
     "build:h5": "uni build",
     "dev:mp-weixin": "uni -p mp-weixin",
-    "build:mp-weixin": "uni build -p mp-weixin"
+    "build:mp-weixin": "uni build -p mp-weixin",
+    "test": "node tests/engine.test.mjs"
   },
   "dependencies": {
     "@dcloudio/uni-components": "^3.0.0-5030420261029002",

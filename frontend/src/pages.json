@@ -3,14 +3,70 @@
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "童伴成长",
-        "navigationBarBackgroundColor": "#FFF7F1",
-        "navigationBarTextStyle": "black"
+        "navigationBarTitleText": "童伴成长"
+      }
+    },
+    {
+      "path": "pages/practice/practice",
+      "style": {
+        "navigationBarTitleText": "学科练习"
+      }
+    },
+    {
+      "path": "pages/ai/ai",
+      "style": {
+        "navigationBarTitleText": "AI 小老师"
+      }
+    },
+    {
+      "path": "pages/growth/growth",
+      "style": {
+        "navigationBarTitleText": "我的成长"
+      }
+    },
+    {
+      "path": "pages/settings/settings",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
+      "path": "pages/parent/parent",
+      "style": {
+        "navigationBarTitleText": "家长中心"
+      }
+    },
+    {
+      "path": "pages/family/family",
+      "style": {
+        "navigationBarTitleText": "亲子互评"
+      }
+    },
+    {
+      "path": "pages/challenge/challenge",
+      "style": {
+        "navigationBarTitleText": "速算挑战"
+      }
+    },
+    {
+      "path": "pages/cards/cards",
+      "style": {
+        "navigationBarTitleText": "知识卡片"
+      }
+    },
+    {
+      "path": "pages/wrongbook/wrongbook",
+      "style": {
+        "navigationBarTitleText": "错题本"
       }
     }
   ],
   "globalStyle": {
-    "backgroundColor": "#FFF7F1",
-    "navigationBarTitleText": "童伴成长"
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "童伴成长",
+    "navigationBarBackgroundColor": "#FFF8F2",
+    "backgroundColor": "#FFF8F2",
+    "backgroundColorTop": "#FFF8F2",
+    "backgroundColorBottom": "#FFF8F2"
   }
 }

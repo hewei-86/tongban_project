@@ -55,6 +55,18 @@ class PracticeGenerateRequest(BaseModel):
     count: int = Field(default=5, ge=1, le=20)
 
 
+class WrongRetryRequest(BaseModel):
+    answer: str = Field(min_length=1, max_length=200)
+
+
+class ChallengeSubmitRequest(BaseModel):
+    user_id: int = 2
+    score: int = Field(default=0, ge=0, le=10000)
+    correct: int = Field(default=0, ge=0, le=500)
+    total: int = Field(default=0, ge=0, le=500)
+    seconds: int = Field(default=60, ge=0, le=600)
+
+
 class EvaluationCreateRequest(BaseModel):
     family_id: int = 1
     evaluator_id: int = 1
