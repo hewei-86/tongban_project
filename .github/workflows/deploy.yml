@@ -40,11 +40,10 @@ jobs:
         working-directory: frontend
         run: npm test
 
+      # 第一次部署前，仓库管理员需要在 Settings → Pages 里把 Source 选为
+      # "GitHub Actions"；工作流令牌没有创建 Pages 站点的权限。
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          # 仓库首次部署时自动把 Pages 的 Source 设为 GitHub Actions
-          enablement: true
 
       # GitHub Pages 项目站点部署在 /<仓库名>/ 子路径下，
       # 通过 UNI_H5_BASE 告诉 uni-app 资源和路由的 base；
