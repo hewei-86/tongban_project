@@ -1,0 +1,110 @@
+
+name: Tongban Auto Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 获取 GitHub 项目代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. 配置 Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # 3. 安装前端依赖
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # 4. 构建 H5
+      - name: Build H5
+        working-directory: frontend
+        run: npx uni build -p h5
+
+      # 5. 检查构建结果
+      - name: Check H5
+        run: |
+          test -f frontend/dist/build/h5/index.html
+
+      # 6. 配置 SSH
+      - name: Setup SSH
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+
+      # 7. 打包后端代码和 H5 文件
+      - name: Package files
+        run: |
+          tar --exclude='.env' \
+              --exclude='*.db' \
+              --exclude='*.zip' \
+              --exclude='.venv' \
+              -czf /tmp/backend.tar.gz -C backend .
+
+          tar -czf /tmp/h5.tar.gz -C frontend/dist/build/h5 .
+
+      # 8. 上传文件到阿里云
+      - name: Upload files
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          scp /tmp/backend.tar.gz \
+            "$SERVER_USER@$SERVER_HOST:/tmp/tongban-backend.tar.gz"
+
+          scp /tmp/h5.tar.gz \
+            "$SERVER_USER@$SERVER_HOST:/tmp/tongban-h5.tar.gz"
+
+      # 9. 服务器自动部署
+      - name: Deploy to server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          ssh "$SERVER_USER@$SERVER_HOST" 'bash -s' <<'REMOTE'
+          set -e
+
+          cd /data/myproject
+
+          # 更新后端代码，不删除 .env 和数据库
+          mkdir -p backend
+          tar -xzf /tmp/tongban-backend.tar.gz -C backend
+
+          # 更新 H5 页面，保留 site 目录本身
+          mkdir -p frontend/site
+          find frontend/site -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          tar -xzf /tmp/tongban-h5.tar.gz -C frontend/site
+
+          # 重新构建并启动后端
+          docker compose build backend
+          docker compose up -d backend
+
+          # 检查后端运行状态
+          docker compose ps backend
+
+          # 清理临时压缩包
+          rm -f /tmp/tongban-backend.tar.gz
+          rm -f /tmp/tongban-h5.tar.gz
+
+          echo "Tongban deploy completed!"
+          REMOTE
