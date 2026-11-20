@@ -11,11 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 获取 GitHub 项目代码
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. 配置 Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -23,22 +21,19 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # 3. 安装前端依赖
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
 
-      # 4. 构建 H5
       - name: Build H5
         working-directory: frontend
         run: npx uni build -p h5
 
-      # 5. 检查构建结果
-      - name: Check H5
+      - name: Check H5 build output
         run: |
           test -f frontend/dist/build/h5/index.html
+          echo "H5 build OK: $(ls -la frontend/dist/build/h5/ | wc -l) files"
 
-      # 6. 配置 SSH
       - name: Setup SSH
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -46,14 +41,11 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-
           printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
 
-      # 7. 打包后端代码和 H5 文件
-      - name: Package files
+      - name: Package all files
         run: |
           tar --exclude='.env' \
               --exclude='*.db' \
@@ -63,48 +55,82 @@ jobs:
 
           tar -czf /tmp/h5.tar.gz -C frontend/dist/build/h5 .
 
-      # 8. 上传文件到阿里云
-      - name: Upload files
+          tar -czf /tmp/infra.tar.gz docker-compose.yml nginx/
+
+      - name: Upload to server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          scp /tmp/backend.tar.gz \
-            "$SERVER_USER@$SERVER_HOST:/tmp/tongban-backend.tar.gz"
+          scp /tmp/backend.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/tongban-backend.tar.gz"
+          scp /tmp/h5.tar.gz     "$SERVER_USER@$SERVER_HOST:/tmp/tongban-h5.tar.gz"
+          scp /tmp/infra.tar.gz  "$SERVER_USER@$SERVER_HOST:/tmp/tongban-infra.tar.gz"
 
-          scp /tmp/h5.tar.gz \
-            "$SERVER_USER@$SERVER_HOST:/tmp/tongban-h5.tar.gz"
-
-      # 9. 服务器自动部署
-      - name: Deploy to server
+      - name: Deploy on server
         env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/data/myproject' }}
         run: |
-          ssh "$SERVER_USER@$SERVER_HOST" 'bash -s' <<'REMOTE'
+          ssh "$SERVER_USER@$SERVER_HOST" 'bash -s' <<REMOTE
           set -e
+          DEPLOY="${DEPLOY_PATH}"
+          echo ">>> Deploying to \$DEPLOY"
+          mkdir -p "\$DEPLOY/backend" "\$DEPLOY/frontend/site" "\$DEPLOY/nginx"
+          cd "\$DEPLOY"
 
-          cd /data/myproject
+          # 1. 更新基础设施文件（docker-compose + nginx.conf）
+          tar -xzf /tmp/tongban-infra.tar.gz
+          echo ">>> infra OK"
 
-          # 更新后端代码，不删除 .env 和数据库
-          mkdir -p backend
+          # 2. 更新后端代码（保留 .env 和 tongban.db）
           tar -xzf /tmp/tongban-backend.tar.gz -C backend
+          echo ">>> backend OK"
 
-          # 更新 H5 页面，保留 site 目录本身
-          mkdir -p frontend/site
+          # 3. 更新 H5 前端
           find frontend/site -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           tar -xzf /tmp/tongban-h5.tar.gz -C frontend/site
+          echo ">>> h5 OK"
 
-          # 重新构建并启动后端
+          # 4. 构建并启动所有服务
           docker compose build backend
-          docker compose up -d backend
+          docker compose up -d
+          echo ">>> containers started"
 
-          # 检查后端运行状态
-          docker compose ps backend
+          # 5. 显示容器状态
+          docker compose ps
+          echo "---"
 
-          # 清理临时压缩包
-          rm -f /tmp/tongban-backend.tar.gz
-          rm -f /tmp/tongban-h5.tar.gz
+          # 6. 健康检查：后端 API
+          sleep 3
+          if curl -sf http://127.0.0.1:8000/api/health > /dev/null; then
+            echo "✅ backend API OK"
+          else
+            echo "❌ backend API failed"
+            docker compose logs --tail=30 backend
+            exit 1
+          fi
 
-          echo "Tongban deploy completed!"
+          # 7. 健康检查：nginx + H5
+          if curl -sf http://127.0.0.1/ > /dev/null; then
+            echo "✅ nginx serving H5 OK"
+          else
+            echo "❌ nginx serving failed"
+            docker compose logs --tail=30 nginx
+            exit 1
+          fi
+
+          # 8. 健康检查：nginx 代理到后端
+          if curl -sf http://127.0.0.1/api/health > /dev/null; then
+            echo "✅ nginx -> backend proxy OK"
+          else
+            echo "❌ nginx -> backend proxy failed"
+            exit 1
+          fi
+
+          # 9. 清理临时文件
+          rm -f /tmp/tongban-backend.tar.gz /tmp/tongban-h5.tar.gz /tmp/tongban-infra.tar.gz
+
+          echo ""
+          echo "🎉 Tongban 部署成功！"
           REMOTE
