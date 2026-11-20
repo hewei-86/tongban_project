@@ -1,9 +1,11 @@
 import json
 import os
 import random
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +26,37 @@ from schemas import (
 
 load_dotenv(verbose=True)
 app = FastAPI(title="童伴成长 API", version="1.0.0")
+
+DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "").strip()
+QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen-turbo").strip() or "qwen-turbo"
+QWEN_ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+
+
+def call_qwen(messages: list, temperature: float = 0.7) -> str | None:
+    if not DASHSCOPE_API_KEY:
+        return None
+    try:
+        resp = httpx.post(
+            QWEN_ENDPOINT,
+            headers={
+                "Authorization": f"Bearer {DASHSCOPE_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": QWEN_MODEL,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": 1024,
+            },
+            timeout=15.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data["choices"][0]["message"]["content"].strip()
+        print(f"[qwen] HTTP {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        print(f"[qwen] call failed: {e}")
+    return None
 
 app.add_middleware(
     CORSMiddleware,
@@ -513,28 +546,35 @@ def remove_wrong(wrong_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-def ai_reply(message: str, grade: int) -> str:
+SUBJECT_MAP = {"math": "数学", "chinese": "语文", "english": "英语"}
+
+
+def ai_reply(message: str, grade: int) -> tuple[str, bool]:
     msg = message.strip()
+    system_prompt = (
+        f"你是「童伴」APP 里的 AI 小老师，正在给 {grade} 年级的小朋友上课。"
+        "请用孩子能听懂的、活泼亲切的语气回答问题。"
+        "讲数学题要一步步拆解思路，鼓励小朋友思考。"
+        "回答控制在 200 字以内，结尾可以加一句鼓励的话。"
+    )
+    result = call_qwen([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": msg},
+    ])
+    if result:
+        return result, False
+
     try:
-        import re
         if "+" in msg or "-" in msg or "*" in msg or "/" in msg:
             tokens = re.split(r'[+\-*/=等于]', msg)
             nums = [float(t) for t in tokens if t.strip() and any(c.isdigit() for c in t)]
-            op = None
-            for ch in "+-*/":
-                if ch in msg:
-                    op = ch
-                    break
+            op = next((ch for ch in "+-*/" if ch in msg), None)
             if len(nums) >= 2 and op:
                 a, b = nums[0], nums[1]
-                ans = None
-                if op == "+": ans = a + b
-                elif op == "-": ans = a - b
-                elif op == "*": ans = a * b
-                elif op == "/" and b != 0: ans = a / b
+                ans = {"+": a + b, "-": a - b, "*": a * b}.get(op, a / b if b != 0 else None)
                 if ans is not None:
                     if ans == int(ans): ans = int(ans)
-                    return f"好问题！{a} {op} {b} = {ans}。讲解：{grade}年级的小朋友可以这样想——先算 {a} {op} {b}，答案是 {ans}。要不要再练一道类似的？"
+                    return f"好问题！{a} {op} {b} = {ans}。讲解：{grade}年级的小朋友可以这样想——先算 {a} {op} {b}，答案是 {ans}。要不要再练一道类似的？", True
     except Exception:
         pass
     greet = ["你好！我是你的 AI 小老师。有什么不懂的尽管问我呀～",
@@ -547,7 +587,7 @@ def ai_reply(message: str, grade: int) -> str:
         sub_hint = "\n提示：这是语文问题，你可以说说具体是哪个字或哪首诗？"
     elif any(k in msg for k in ("英文", "英语", "单词")):
         sub_hint = "\n提示：你可以告诉我想查哪个单词，我来帮你翻译～"
-    return random.choice(greet) + sub_hint + f"\n\n(当前讲解难度：{grade}年级)"
+    return random.choice(greet) + sub_hint + f"\n\n(当前讲解难度：{grade}年级)", True
 
 
 @app.post("/api/ai/chat")
@@ -556,10 +596,10 @@ def ai_chat(data: AiChatRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(404, "用户不存在")
     text = data.message or data.question
-    reply = ai_reply(text, data.grade)
+    reply, demo = ai_reply(text, data.grade)
     db.add(AiChat(user_id=data.user_id, question=text, answer=reply))
     db.commit()
-    return {"answer": reply}
+    return {"answer": reply, "demo": demo, "ai_enabled": bool(DASHSCOPE_API_KEY)}
 
 
 @app.post("/api/practice/generate")
@@ -567,18 +607,73 @@ def generate_practice(data: PracticeGenerateRequest, db: Session = Depends(get_d
     subject = data.subject if data.subject in ("math", "chinese", "english") else "math"
     grade = data.grade
     count = min(data.count, 10)
+    subject_label = SUBJECT_MAP.get(subject, subject)
+
+    ai_json = call_qwen([{
+        "role": "system", "content": (
+            f"你是一位{grade}年级{subject_label}老师。"
+            f"请生成 {count} 道{subject_label}练习题，适合{grade}年级学生。"
+            "只返回严格的 JSON 数组，不要任何解释文字或 markdown 代码块。"
+            f'格式：[{{"content": "题目内容", "answer": "正确答案", "explanation": "解题思路", "options": ["A", "B", "C", "D"]}}]'
+            "options 数组放 4 个选项（如果是选择题），填空题或计算题 options 设为 []。"
+        ),
+        "role": "user", "content": f"请出 {count} 道 {grade} 年级 {subject_label} 练习题。"
+    }], temperature=0.8)
+
+    ai_questions = []
+    if ai_json:
+        try:
+            cleaned = ai_json.strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r'^```[a-z]*\n|\n```$', '', cleaned, flags=re.MULTILINE)
+            start = cleaned.find('[')
+            end = cleaned.rfind(']') + 1
+            if start >= 0 and end > start:
+                parsed = json.loads(cleaned[start:end])
+                for item in parsed[:count]:
+                    opt = item.get("options") or []
+                    if opt and isinstance(opt, list):
+                        pass
+                    else:
+                        opt = []
+                    ai_questions.append({
+                        "content": str(item.get("content", "")).strip(),
+                        "answer": str(item.get("answer", "")).strip(),
+                        "explanation": str(item.get("explanation", "")).strip(),
+                        "options": opt,
+                        "grade": grade,
+                    })
+        except Exception:
+            ai_questions = []
+
+    if ai_questions:
+        return {
+            "questions": [{
+                "id": 0, "subject": subject,
+                "subject_label": subject_label,
+                "grade": grade,
+                "content": q["content"],
+                "answer": q["answer"],
+                "explanation": q["explanation"],
+                "options": q["options"],
+                "ai_generated": True,
+            } for q in ai_questions],
+            "demo": False,
+        }
+
     pool = db.query(Question).filter(Question.subject == subject, Question.grade <= grade).all()
     if len(pool) < count:
         pool = db.query(Question).filter(Question.subject == subject).all()
     if not pool:
-        return {"questions": []}
+        return {"questions": [], "demo": True}
     picks = random.sample(pool, min(count, len(pool)))
     return {"questions": [{
         "id": q.id, "subject": q.subject,
         "subject_label": SUBJECT_MAP.get(q.subject, q.subject),
         "grade": q.grade, "content": q.content,
         "options": json.loads(q.options) if q.options else [],
-    } for q in picks]}
+        "ai_generated": False,
+    } for q in picks], "demo": True}
 
 
 @app.get("/api/parent/dashboard")
