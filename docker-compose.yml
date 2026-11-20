@@ -6,9 +6,9 @@ services:
     container_name: tongban-backend
     restart: always
     environment:
-      - DATABASE_URL=sqlite:///./tongban.db
+      - DATABASE_URL=sqlite:////app/data/tongban.db
     volumes:
-      - ./backend/tongban.db:/app/tongban.db
+      - tongban-data:/app/data
     expose:
       - "8000"
     ports:
@@ -34,3 +34,7 @@ services:
 networks:
   tongban-net:
     driver: bridge
+
+volumes:
+  tongban-data:
+    driver: local
