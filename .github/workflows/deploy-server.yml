@@ -1,15 +1,26 @@
-name: Deploy to Own Server (optional)
+name: Deploy to Own Server
 
-# 可选方案：把 H5 + FastAPI 后端部署到自己的服务器（Docker + Nginx）。
+# 把 H5 + FastAPI 后端部署到自己的服务器（Docker + Nginx）。
+# 推送到 main 自动部署，也可以在 Actions 页面手动触发。
 # 需要在仓库 Secrets 中配置：
 #   SERVER_HOST   服务器 IP 或域名
 #   SERVER_USER   SSH 用户名
 #   SERVER_SSH_KEY 私钥内容
-#   DEPLOY_PATH   服务器部署目录，例如 /data/tongban
-# 配置完成后再在 Actions 页面手动点击 Run workflow。
+#   DEPLOY_PATH   服务器部署目录（可选，默认 /data/myproject）
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 部署是串行的：新提交排队等待上一次部署完成，避免两个部署同时操作容器
+concurrency:
+  group: server-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -29,6 +40,10 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Run unit tests
+        working-directory: frontend
+        run: npm test
 
       - name: Build H5
         working-directory: frontend
