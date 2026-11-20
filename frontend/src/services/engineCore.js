@@ -744,6 +744,34 @@ export function createEngine(storage, options = {}) {
     return { questions: picks.map(serializeQuestion), demo: true, note: '已按年级抽取题库练习' }
   }
 
+  /** 把服务端 / AI 生成的题目导入本地，分配本地 id，之后按本地流程判题 */
+  function importQuestions(items = []) {
+    const created = []
+    for (const item of Array.isArray(items) ? items : []) {
+      if (!item || !item.content || !item.answer) continue
+      const subject = ['math', 'chinese', 'english'].includes(item.subject) ? item.subject : 'math'
+      const question = {
+        id: state.nextId.question++,
+        subject,
+        grade: clamp(item.grade || 1, 1, 6),
+        content: String(item.content).slice(0, 500),
+        answer: String(item.answer).slice(0, 100),
+        explanation: String(item.explanation || '').slice(0, 1000),
+        options: Array.isArray(item.options) ? item.options.map((option) => String(option)).slice(0, 6) : [],
+        accept: [],
+        source: 'ai',
+        created_at: now().toISOString()
+      }
+      state.questions.push(question)
+      created.push(serializeQuestion(question))
+    }
+    if (created.length) {
+      pruneAiQuestions()
+      commit()
+    }
+    return created
+  }
+
   function pruneAiQuestions() {
     const aiQuestions = state.questions.filter((item) => item.source === 'ai')
     if (aiQuestions.length <= 120) return
@@ -1309,6 +1337,7 @@ export function createEngine(storage, options = {}) {
     markWrongMastered,
     removeWrong,
     generatePractice,
+    importQuestions,
     // AI
     chatWithAi,
     getChatHistory,

@@ -32,7 +32,7 @@ QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen-turbo").strip() or "qwen-turbo"
 QWEN_ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
 
-def call_qwen(messages: list, temperature: float = 0.7) -> str | None:
+def call_qwen(messages: list, temperature: float = 0.7, timeout: float = 15.0, max_tokens: int = 1024) -> str | None:
     if not DASHSCOPE_API_KEY:
         return None
     try:
@@ -46,9 +46,9 @@ def call_qwen(messages: list, temperature: float = 0.7) -> str | None:
                 "model": QWEN_MODEL,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": 1024,
+                "max_tokens": max_tokens,
             },
-            timeout=15.0,
+            timeout=timeout,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -678,12 +678,15 @@ def generate_practice(data: PracticeGenerateRequest, db: Session = Depends(get_d
         "role": "system", "content": (
             f"你是一位{grade}年级{subject_label}老师。"
             f"请生成 {count} 道{subject_label}练习题，适合{grade}年级学生。"
+            "要求：题目贴近小学生的生活，难度适合该年级，题目之间不要重复；"
+            "答案要简短明确（数字题只写数字，文字题只写关键词）；"
+            "每题都要有一句话解题思路；如果是选择题，options 放 4 个选项且必须包含正确答案，"
+            "填空题或计算题 options 设为 []。"
             "只返回严格的 JSON 数组，不要任何解释文字或 markdown 代码块。"
             f'格式：[{{"content": "题目内容", "answer": "正确答案", "explanation": "解题思路", "options": ["A", "B", "C", "D"]}}]'
-            "options 数组放 4 个选项（如果是选择题），填空题或计算题 options 设为 []。"
         ),
         "role": "user", "content": f"请出 {count} 道 {grade} 年级 {subject_label} 练习题。"
-    }], temperature=0.8)
+    }], temperature=0.85, timeout=45.0, max_tokens=1800)
 
     ai_questions = []
     if ai_json:
@@ -724,7 +727,7 @@ def generate_practice(data: PracticeGenerateRequest, db: Session = Depends(get_d
             )
             db.add(row)
             db.flush()
-            created.append({
+            payload = {
                 "id": row.id,
                 "subject": subject,
                 "subject_label": subject_label,
@@ -732,23 +735,36 @@ def generate_practice(data: PracticeGenerateRequest, db: Session = Depends(get_d
                 "content": row.content,
                 "options": item["options"],
                 "ai_generated": True,
-            })
+            }
+            if data.include_answer:
+                payload["answer"] = row.answer
+                payload["explanation"] = row.explanation
+            created.append(payload)
         db.commit()
-        return {"questions": created, "demo": False}
+        return {"questions": created, "demo": False, "ai_generated": True}
 
     pool = db.query(Question).filter(Question.subject == subject, Question.grade <= grade).all()
     if len(pool) < count:
         pool = db.query(Question).filter(Question.subject == subject).all()
     if not pool:
-        return {"questions": [], "demo": True}
+        return {"questions": [], "demo": True, "ai_generated": False}
     picks = random.sample(pool, min(count, len(pool)))
-    return {"questions": [{
-        "id": q.id, "subject": q.subject,
-        "subject_label": SUBJECT_MAP.get(q.subject, q.subject),
-        "grade": q.grade, "content": q.content,
-        "options": json.loads(q.options) if q.options else [],
-        "ai_generated": False,
-    } for q in picks], "demo": True}
+    questions = []
+    for q in picks:
+        payload = {
+            "id": q.id,
+            "subject": q.subject,
+            "subject_label": SUBJECT_MAP.get(q.subject, q.subject),
+            "grade": q.grade,
+            "content": q.content,
+            "options": json.loads(q.options) if q.options else [],
+            "ai_generated": False,
+        }
+        if data.include_answer:
+            payload["answer"] = q.answer
+            payload["explanation"] = q.explanation
+        questions.append(payload)
+    return {"questions": questions, "demo": True, "ai_generated": False}
 
 
 @app.get("/api/parent/dashboard")

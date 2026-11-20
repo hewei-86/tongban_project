@@ -4,7 +4,7 @@
       <view>
         <text class="page-head-sub">{{ gradeLabel }} · 答错的题会自动进错题本</text>
       </view>
-      <view class="btn btn-soft btn-sm" @click="loadQuestions(true)">🤖 AI 出题</view>
+      <view class="btn btn-soft btn-sm" :class="{ disabled: loading }" @click="onAiClick">🤖 AI 出题</view>
     </view>
 
     <view class="card flush">
@@ -31,7 +31,7 @@
     <view v-if="loading" class="card">
       <view class="empty">
         <text class="empty-emoji">✏️</text>
-        <text>题目准备中…</text>
+        <text>{{ loadingText }}</text>
       </view>
     </view>
 
@@ -164,6 +164,7 @@ import TabBar from '../../components/TabBar.vue'
 import { api, toast } from '../../services/api.js'
 import { session, switchGrade } from '../../services/session.js'
 import { CHILD_ID } from '../../services/engineCore.js'
+import { generatePracticeRemote, isRemoteAiEnabled } from '../../services/remoteAi.js'
 
 const subjects = [
   { key: 'math', label: '数学', icon: '➗' },
@@ -181,12 +182,14 @@ const selected = ref('')
 const answerText = ref('')
 const result = ref(null)
 const loading = ref(false)
+const loadingText = ref('题目准备中…')
 const finished = ref(false)
 const answersLog = ref([])
 const correctCount = ref(0)
 const earnedPoints = ref(0)
 const seconds = ref(0)
 let timer = null
+let requestSeq = 0
 
 const subjectLabel = computed(() => subjectLabels[subject.value] || '数学')
 const gradeLabel = computed(() => grades[grade.value - 1] || '一年级')
@@ -233,30 +236,73 @@ function resetPerQuestion() {
   startTimer()
 }
 
-function loadQuestions(generated = false) {
+async function fetchAiPractice() {
+  let remoteFailed = false
+  if (isRemoteAiEnabled()) {
+    try {
+      const remote = await generatePracticeRemote({
+        subject: subject.value,
+        grade: grade.value,
+        count: 5
+      })
+      const imported = remote.questions.length ? api.importQuestions(remote.questions) : []
+      if (imported.length) {
+        return {
+          questions: imported,
+          note: remote.aiGenerated
+            ? 'AI 已生成新题（通义千问）'
+            : '服务器还没配置 AI Key，已按年级抽取题库'
+        }
+      }
+    } catch (error) {
+      remoteFailed = true
+      console.warn('[practice] AI 出题失败，回退本地题库：', error?.message || error)
+    }
+  }
+
+  const local = api.generatePractice({ subject: subject.value, grade: grade.value, count: 5 })
+  return {
+    questions: local.questions || [],
+    note: remoteFailed
+      ? 'AI 出题暂时不可用，已使用本地题库'
+      : local.note || '已生成新题目'
+  }
+}
+
+async function loadQuestions(generated = false) {
+  const seq = ++requestSeq
   loading.value = true
+  loadingText.value = generated ? 'AI 正在出题…' : '题目准备中…'
   stopTimer()
   try {
     const payload = generated
-      ? api.generatePractice({ subject: subject.value, grade: grade.value, count: 5 })
+      ? await fetchAiPractice()
       : { questions: api.getQuestions({ subject: subject.value, grade: grade.value, limit: 5 }) }
+    if (seq !== requestSeq) return
+
     questions.value = payload.questions || []
-    if (!questions.value.length) {
-      toast('暂时没有这个年级的题目，换个年级试试')
-    } else if (generated) {
-      toast(payload.note || '已生成新题目')
-    }
     index.value = 0
     finished.value = false
     answersLog.value = []
     correctCount.value = 0
     earnedPoints.value = 0
     resetPerQuestion()
+
+    if (!questions.value.length) {
+      toast('暂时没有这个年级的题目，换个年级试试')
+    } else if (generated) {
+      toast(payload.note || '已生成新题目')
+    }
   } catch (error) {
-    toast(error?.message || '题目加载失败')
+    if (seq === requestSeq) toast(error?.message || '题目加载失败')
   } finally {
-    loading.value = false
+    if (seq === requestSeq) loading.value = false
   }
+}
+
+function onAiClick() {
+  if (loading.value) return
+  loadQuestions(true)
 }
 
 onLoad((options = {}) => {

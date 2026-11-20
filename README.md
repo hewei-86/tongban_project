@@ -49,7 +49,7 @@
 | 页面 | 能力 |
 | --- | --- |
 | 🏠 首页 | 每日签到、连续天数、今日任务进度、年级切换、孩子 / 家长视角切换、每日一句 |
-| ✏️ 学科练习 | 数学 / 语文 / 英语 3 科 × 1—3 年级题库，逐题作答与讲解，答错自动进错题本，完成后有成绩小结 |
+| ✏️ 学科练习 | 数学 / 语文 / 英语 3 科 × 1—3 年级题库，逐题作答与讲解，答错自动进错题本；「AI 出题」在服务器部署时调用通义千问生成新题，纯静态环境自动回退本地题库 |
 | ⚡ 速算挑战 | 60 秒限时口算，连击加分，最高分记录，成绩计入积分与成长曲线 |
 | 📚 知识卡片 | 英语单词闪卡（点开看释义）、8 首古诗、10 个成语、收藏夹 |
 | 🤖 AI 小老师 | 本地规则引擎：四则运算分步讲解、古诗背诵、成语释义、单词翻译、汉字加笔、情绪安抚；隐私与安全话题会自动拦截并引导找家长 |
@@ -186,16 +186,17 @@ tongban_project/
 │  │  │  ├─ auth.js                 # 注册 / 登录 / 退出 / 改密
 │  │  │  ├─ accounts.js             # 本机账号列表
 │  │  │  ├─ password.js             # PBKDF2 / SHA-256 密码处理
+│  │  │  ├─ remoteAi.js             # 服务器「AI 出题」客户端（含本地回退）
 │  │  │  └─ engine.js               # 账号可切换的数据引擎单例
 │  │  ├─ data/                      # 题库、知识卡片数据
 │  │  ├─ styles/app.css             # 设计系统（颜色、卡片、按钮、表单）
 │  │  ├─ pages.json / manifest.json # 路由与打包配置
 │  │  └─ App.vue / main.js
-│  ├─ tests/                        # 26 项单测（引擎 + 账号密码）
+│  ├─ tests/                        # 27 项单测（引擎 + 账号密码）
 │  └─ vite.config.js
 ├─ backend/                         # 可选：FastAPI 后端
 │  ├─ main.py / models.py / schemas.py / database.py
-│  ├─ test_api.py                   # 36 项接口自测
+│  ├─ test_api.py                   # 39 项接口自测
 │  ├─ requirements.txt / Dockerfile
 │  └─ .env.example
 ├─ nginx/nginx.conf                 # 可选：服务器部署用
@@ -239,6 +240,22 @@ uv run uvicorn main:app --reload --port 8000
 
 没有 `DASHSCOPE_API_KEY` 时，AI 接口会返回明确标注的演示回复，不影响其它功能。
 
+### 启用真实 AI 出题（通义千问）
+
+服务器部署时，练习页的「AI 出题」会自动调用后端，由通义千问按年级和学科生成新题：
+
+1. 在 [阿里云百炼](https://bailian.console.aliyun.com/) 创建 API Key（需要开通百炼服务）；
+2. 打开 GitHub 仓库 **Settings → Secrets and variables → Actions**，新建 Secret：`DASHSCOPE_API_KEY`；
+3. 推送任意提交（或在 Actions 手动运行 **Deploy to Own Server**），工作流会把 Key 同步到服务器 `/data/myproject/.env` 并重启后端；
+4. 打开服务器站点 →「练习」→「AI 出题」，成功时会提示“AI 已生成新题（通义千问）”。
+
+说明：
+
+- GitHub Pages 没有后端，会自动回退本地题库，不影响使用；
+- 本地开发时 `npm run dev:h5` 会把 `/api` 代理到 `127.0.0.1:8000`，可以直接测试；
+- 未配置 Key、额度不足或请求超时都会自动回退本地题库；
+- 默认模型是 `qwen-turbo`，可在服务器 `.env` 中修改 `QWEN_MODEL`（例如 `qwen-plus`），费用以百炼控制台为准。
+
 ### 接口自测
 
 ```bash
@@ -247,7 +264,7 @@ cd backend
 python test_api.py                        # macOS / Linux
 ```
 
-脚本使用临时数据库，不会污染 `tongban.db`；当前覆盖 **36 项**检查。
+脚本使用临时数据库，不会污染 `tongban.db`；当前覆盖 **39 项**检查。
 
 ### 用 Docker 部署到自己的服务器
 
@@ -293,7 +310,7 @@ npm run build:mp-weixin
 ```bash
 cd frontend
 npm test
-# 26 项全部通过（16 项引擎 + 10 项账号 / 密码）
+# 27 项全部通过（17 项引擎 + 10 项账号 / 密码）
 ```
 
 后端（接口、判题、签到、错题、挑战、报告等）：
@@ -301,7 +318,7 @@ npm test
 ```bash
 cd backend
 .venv\Scripts\python.exe test_api.py
-# 36 项全部通过
+# 39 项全部通过
 ```
 
 ---

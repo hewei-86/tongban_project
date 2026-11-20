@@ -53,6 +53,8 @@ class PracticeGenerateRequest(BaseModel):
     subject: str = "math"
     grade: int = Field(default=3, ge=1, le=6)
     count: int = Field(default=5, ge=1, le=20)
+    # 本机数据模式下，前端需要答案来本地判题；后端模式可保持 False
+    include_answer: bool = False
 
 
 class WrongRetryRequest(BaseModel):

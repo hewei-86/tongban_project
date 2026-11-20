@@ -91,12 +91,16 @@ def main() -> int:
         tasks = r.json()
         check("每日任务", r.status_code == 200 and len(tasks) == 3, r.text[:120])
 
-        r = post("/api/practice/generate", {"user_id": 2, "subject": "math", "grade": 2, "count": 3})
+        r = post("/api/practice/generate", {
+            "user_id": 2, "subject": "math", "grade": 2, "count": 3, "include_answer": True,
+        })
         payload = r.json()
-        check("AI 出题", r.status_code == 200 and len(payload.get("questions", [])) >= 1, r.text[:160])
+        check("出题接口", r.status_code == 200 and len(payload.get("questions", [])) >= 1, r.text[:160])
+        check("出题标记来源", payload.get("ai_generated") is False, r.text[:160])
         ai_questions = payload.get("questions", [])
         if ai_questions:
             check("出题会落库并返回真实 id", ai_questions[0].get("id", 0) > 0)
+            check("出题包含答案供本地判题", bool(ai_questions[0].get("answer")))
             r = post("/api/learning/submit", {
                 "user_id": 2,
                 "question_id": ai_questions[0]["id"],
@@ -104,6 +108,10 @@ def main() -> int:
                 "time_spent": 20,
             })
             check("AI 题可提交", r.status_code == 200, r.text[:120])
+
+        r = post("/api/practice/generate", {"user_id": 2, "subject": "math", "grade": 2, "count": 2})
+        hidden = (r.json().get("questions") or [{}])[0]
+        check("默认不泄露答案", "answer" not in hidden)
 
         r = post("/api/ai/chat", {"user_id": 2, "grade": 1, "message": "8+7等于几"})
         check("AI 问答（演示模式）", r.status_code == 200 and "15" in r.json().get("answer", ""), r.text[:120])

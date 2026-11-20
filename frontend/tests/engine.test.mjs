@@ -108,6 +108,38 @@ test('AI 出题会生成可提交的新题目', () => {
   assert.equal(typeof submitted.is_correct, 'boolean')
 })
 
+test('可以导入 AI 生成的题目并在本地判题', () => {
+  const { engine } = fresh()
+  const imported = engine.importQuestions([
+    {
+      subject: 'chinese',
+      grade: 1,
+      content: '“春眠不觉晓”的下一句是？',
+      answer: '处处闻啼鸟',
+      explanation: '出自孟浩然的《春晓》',
+      options: ['处处闻啼鸟', '花落知多少']
+    },
+    {
+      subject: 'math',
+      grade: 2,
+      content: '7 + 8 = ？',
+      answer: '15',
+      explanation: '凑十法',
+      options: ['14', '15', '16']
+    },
+    { subject: 'math', content: '', answer: '' }
+  ])
+
+  assert.equal(imported.length, 2)
+  assert.deepEqual(imported.map((item) => item.subject), ['chinese', 'math'])
+  assert.equal(imported[0].answer, undefined, '不应把答案直接返回给页面')
+  assert.deepEqual(imported[1].options, ['14', '15', '16'])
+
+  const result = engine.submitLearning({ question_id: imported[1].id, answer: '15', seconds: 20 })
+  assert.equal(result.is_correct, true)
+  assert.equal(result.explanation, '凑十法')
+})
+
 test('学习报告会统计学科分布和建议', () => {
   const { engine } = fresh()
   const weekly = engine.getWeeklyReport()

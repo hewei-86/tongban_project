@@ -86,6 +86,24 @@ jobs:
           scp /tmp/infra.tar.gz   "$SERVER_USER@$SERVER_HOST:/tmp/tongban-infra.tar.gz"
           echo "Upload done"
 
+      # 如果配置了 DASHSCOPE_API_KEY secret，就把它同步到服务器的 .env，
+      # 让后端启用通义千问出题；未配置则保持原样（前端会回退本地题库）。
+      - name: Sync AI key to server
+        env:
+          AI_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          if [ -z "$AI_KEY" ]; then
+            echo "DASHSCOPE_API_KEY secret 未配置，跳过（AI 出题会回退本地题库）"
+            exit 0
+          fi
+          printf 'DASHSCOPE_API_KEY=%s\n' "$AI_KEY" > /tmp/tongban-ai.env
+          scp /tmp/tongban-ai.env "$SERVER_USER@$SERVER_HOST:/tmp/tongban-ai.env"
+          ssh "$SERVER_USER@$SERVER_HOST" "DEPLOY='${DEPLOY_PATH:-/data/myproject}'; mkdir -p \"\$DEPLOY\"; touch \"\$DEPLOY/.env\"; grep -v '^DASHSCOPE_API_KEY=' \"\$DEPLOY/.env\" > /tmp/tongban.env.tmp || true; cat /tmp/tongban-ai.env >> /tmp/tongban.env.tmp; mv /tmp/tongban.env.tmp \"\$DEPLOY/.env\"; chmod 600 \"\$DEPLOY/.env\"; rm -f /tmp/tongban-ai.env; echo '.env 已更新 AI Key'"
+          rm -f /tmp/tongban-ai.env
+
       - name: Deploy on server
         env:
           SERVER_USER: ${{ secrets.SERVER_USER }}
