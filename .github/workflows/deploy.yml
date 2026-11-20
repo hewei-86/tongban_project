@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -29,108 +30,128 @@ jobs:
         working-directory: frontend
         run: npx uni build -p h5
 
-      - name: Check H5 build output
+      - name: Verify H5 build
         run: |
           test -f frontend/dist/build/h5/index.html
-          echo "H5 build OK: $(ls -la frontend/dist/build/h5/ | wc -l) files"
+          echo "H5 build OK"
 
       - name: Setup SSH
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
 
-      - name: Package all files
+      - name: Package artifacts
         run: |
-          tar --exclude='.env' \
-              --exclude='*.db' \
-              --exclude='*.zip' \
-              --exclude='.venv' \
+          tar --exclude='.env' --exclude='*.db' --exclude='*.zip' --exclude='.venv' \
               -czf /tmp/backend.tar.gz -C backend .
-
           tar -czf /tmp/h5.tar.gz -C frontend/dist/build/h5 .
-
           tar -czf /tmp/infra.tar.gz docker-compose.yml nginx/
+          echo "Package sizes:"
+          ls -lh /tmp/backend.tar.gz /tmp/h5.tar.gz /tmp/infra.tar.gz
 
       - name: Upload to server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          scp /tmp/backend.tar.gz "$SERVER_USER@$SERVER_HOST:/tmp/tongban-backend.tar.gz"
-          scp /tmp/h5.tar.gz     "$SERVER_USER@$SERVER_HOST:/tmp/tongban-h5.tar.gz"
-          scp /tmp/infra.tar.gz  "$SERVER_USER@$SERVER_HOST:/tmp/tongban-infra.tar.gz"
+          scp /tmp/backend.tar.gz  "$SERVER_USER@$SERVER_HOST:/tmp/tongban-backend.tar.gz"
+          scp /tmp/h5.tar.gz      "$SERVER_USER@$SERVER_HOST:/tmp/tongban-h5.tar.gz"
+          scp /tmp/infra.tar.gz    "$SERVER_USER@$SERVER_HOST:/tmp/tongban-infra.tar.gz"
+          echo "Upload done"
 
       - name: Deploy on server
         env:
           SERVER_USER: ${{ secrets.SERVER_USER }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/data/myproject' }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          ssh "$SERVER_USER@$SERVER_HOST" 'bash -s' <<REMOTE
+          # 用引号括住 heredoc 结束符，防止本地 shell 展开 $变量
+          ssh "$SERVER_USER@$SERVER_HOST" 'bash -s' <<'ENDSSH'
           set -e
-          DEPLOY="${DEPLOY_PATH}"
-          echo ">>> Deploying to \$DEPLOY"
-          mkdir -p "\$DEPLOY/backend" "\$DEPLOY/frontend/site" "\$DEPLOY/nginx"
-          cd "\$DEPLOY"
 
-          # 1. 更新基础设施文件（docker-compose + nginx.conf）
+          DEPLOY="${DEPLOY_PATH:-/data/myproject}"
+          echo ">>> Target: $DEPLOY"
+
+          # 确保 docker compose 可用（兼容 v1 和 v2）
+          if docker compose version >/dev/null 2>&1; then
+            DC="docker compose"
+          else
+            DC="docker-compose"
+          fi
+          echo ">>> Using: $DC"
+
+          mkdir -p "$DEPLOY/backend" "$DEPLOY/frontend/site" "$DEPLOY/nginx"
+          cd "$DEPLOY"
+
+          # 1. 基础设施（docker-compose + nginx）
+          echo ">>> Extracting infra..."
           tar -xzf /tmp/tongban-infra.tar.gz
-          echo ">>> infra OK"
+          ls -la docker-compose.yml nginx/nginx.conf
 
-          # 2. 更新后端代码（保留 .env 和 tongban.db）
+          # 2. 后端代码（保留数据库和 .env）
+          echo ">>> Extracting backend..."
           tar -xzf /tmp/tongban-backend.tar.gz -C backend
-          echo ">>> backend OK"
 
-          # 3. 更新 H5 前端
+          # 3. H5 前端
+          echo ">>> Extracting H5..."
           find frontend/site -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           tar -xzf /tmp/tongban-h5.tar.gz -C frontend/site
-          echo ">>> h5 OK"
 
-          # 4. 构建并启动所有服务
-          docker compose build backend
-          docker compose up -d
-          echo ">>> containers started"
+          # 4. 停止旧容器
+          echo ">>> Stopping old containers..."
+          $DC down --remove-orphans 2>/dev/null || true
 
-          # 5. 显示容器状态
-          docker compose ps
-          echo "---"
+          # 5. 构建 + 启动
+          echo ">>> Building backend image..."
+          $DC build backend
+          echo ">>> Starting containers..."
+          $DC up -d
 
-          # 6. 健康检查：后端 API
-          sleep 3
-          if curl -sf http://127.0.0.1:8000/api/health > /dev/null; then
+          echo ""
+          echo "=== Container Status ==="
+          $DC ps
+
+          # 6. 健康检查
+          echo ""
+          echo "=== Health Checks ==="
+          sleep 4
+
+          # 后端直接（通过 nginx 的 backend 容器网络）
+          if $DC exec -T backend curl -sf http://127.0.0.1:8000/api/health >/dev/null 2>&1 || \
+             curl -sf http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
             echo "✅ backend API OK"
           else
-            echo "❌ backend API failed"
-            docker compose logs --tail=30 backend
+            echo "❌ backend API FAILED - showing logs:"
+            $DC logs --tail=40 backend || docker logs tongban-backend --tail 40
             exit 1
           fi
 
-          # 7. 健康检查：nginx + H5
-          if curl -sf http://127.0.0.1/ > /dev/null; then
-            echo "✅ nginx serving H5 OK"
+          # nginx 静态 H5
+          if curl -sf http://127.0.0.1/ >/dev/null 2>&1; then
+            echo "✅ nginx H5 OK"
           else
-            echo "❌ nginx serving failed"
-            docker compose logs --tail=30 nginx
+            echo "❌ nginx H5 FAILED - showing logs:"
+            $DC logs --tail=40 nginx || docker logs tongban-nginx --tail 40
             exit 1
           fi
 
-          # 8. 健康检查：nginx 代理到后端
-          if curl -sf http://127.0.0.1/api/health > /dev/null; then
-            echo "✅ nginx -> backend proxy OK"
+          # nginx -> backend 代理
+          if curl -sf http://127.0.0.1/api/health >/dev/null 2>&1; then
+            echo "✅ nginx proxy -> backend OK"
           else
-            echo "❌ nginx -> backend proxy failed"
+            echo "❌ nginx proxy FAILED"
+            curl -s http://127.0.0.1/api/health || true
             exit 1
           fi
 
-          # 9. 清理临时文件
+          # 7. 清理
           rm -f /tmp/tongban-backend.tar.gz /tmp/tongban-h5.tar.gz /tmp/tongban-infra.tar.gz
 
           echo ""
-          echo "🎉 Tongban 部署成功！"
-          REMOTE
+          echo "🎉 部署成功！"
+          ENDSSH
