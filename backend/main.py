@@ -211,8 +211,27 @@ def seed_data():
         db.close()
 
 
+def _check_schema():
+    from sqlalchemy import inspect
+    insp = inspect(engine)
+    need_rebuild = False
+    for table_name, table in Base.metadata.tables.items():
+        if insp.has_table(table_name):
+            db_cols = {c["name"] for c in insp.get_columns(table_name)}
+            model_cols = {c.name for c in table.columns}
+            if not model_cols.issubset(db_cols):
+                print(f"[schema] {table_name}: missing cols {model_cols - db_cols} -> rebuild needed")
+                need_rebuild = True
+        else:
+            pass
+    return need_rebuild
+
+
 @app.on_event("startup")
 def startup():
+    if _check_schema():
+        print("[schema] Dropping old tables and rebuilding...")
+        Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     seed_data()
 
