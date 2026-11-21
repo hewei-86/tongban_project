@@ -1,5 +1,5 @@
 <template>
-  <view class="page">
+  <view class="page" :class="{ 'keyboard-open': keyboardOpen }">
     <view class="ai-hero">
       <view class="ai-avatar">🤖</view>
       <view class="ai-intro">
@@ -38,16 +38,27 @@
       </view>
     </view>
 
-    <view class="composer">
+    <view class="composer" :style="composerStyle">
       <input
         v-model="draft"
         class="composer-input"
         placeholder="把不会的题目告诉我吧"
         confirm-type="send"
-        :disabled="sending"
+        :adjust-position="true"
+        :hold-keyboard="true"
+        :cursor-spacing="24"
+        @focus="handleComposerFocus"
+        @blur="handleComposerBlur"
         @confirm="send()"
       />
-      <view class="composer-btn" :class="{ disabled: sending || !draft.trim() }" @click="send()">发送</view>
+      <view
+        class="composer-btn"
+        :class="{ disabled: sending || !draft.trim() }"
+        @mousedown.prevent
+        @click="send()"
+      >
+        发送
+      </view>
     </view>
 
     <view class="ai-foot">
@@ -58,13 +69,13 @@
       <text class="clear-link" @click="clearChat">清空对话</text>
     </view>
 
-    <TabBar active="ai" />
+    <TabBar v-if="!keyboardOpen" active="ai" />
   </view>
 </template>
 
 <script setup>
-import { nextTick, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import TabBar from '../../components/TabBar.vue'
 import { api, toast } from '../../services/api.js'
 import { session } from '../../services/session.js'
@@ -76,7 +87,57 @@ const quickPrompts = ['8 + 7 等于几？', '“春晓”怎么背？', '苹果�
 const messages = ref([])
 const draft = ref('')
 const sending = ref(false)
+const keyboardOpen = ref(false)
+const keyboardOffset = ref(0)
 let greeted = false
+
+/**
+ * 输入框悬浮在底部：
+ * - 平时停在底部导航上方；
+ * - 键盘弹起时隐藏底部导航，并按键盘高度上移（H5 用 visualViewport，兼容 iOS Safari）。
+ */
+const composerStyle = computed(() => {
+  if (keyboardOpen.value) {
+    return {
+      bottom: `calc(20rpx + env(safe-area-inset-bottom) + ${keyboardOffset.value}px)`
+    }
+  }
+  return { bottom: 'calc(142rpx + env(safe-area-inset-bottom))' }
+})
+
+function updateKeyboardOffset() {
+  if (typeof window === 'undefined' || !window.visualViewport) return
+  const viewport = window.visualViewport
+  const offset = Math.max(0, window.innerHeight - (viewport.height + viewport.offsetTop))
+  keyboardOffset.value = Math.round(offset)
+}
+
+let viewportListener = null
+
+function handleComposerFocus() {
+  keyboardOpen.value = true
+  // 键盘动画结束后再量一次高度，兼容 iOS Safari
+  setTimeout(updateKeyboardOffset, 120)
+}
+
+function handleComposerBlur() {
+  keyboardOpen.value = false
+  keyboardOffset.value = 0
+}
+
+onMounted(() => {
+  if (typeof window === 'undefined' || !window.visualViewport) return
+  viewportListener = () => updateKeyboardOffset()
+  window.visualViewport.addEventListener('resize', viewportListener)
+  window.visualViewport.addEventListener('scroll', viewportListener)
+})
+
+onUnload(() => {
+  if (typeof window === 'undefined' || !window.visualViewport || !viewportListener) return
+  window.visualViewport.removeEventListener('resize', viewportListener)
+  window.visualViewport.removeEventListener('scroll', viewportListener)
+  viewportListener = null
+})
 
 function greetingMessage() {
   return { role: 'assistant', content: aiGreeting(session.grade || 1), created_at: '' }
@@ -367,4 +428,30 @@ async function clearChat() {
 /* ===== v2.1 聊天区 ===== */
 .chat-card { background: linear-gradient(180deg, #fffdfa 0%, #ffffff 52%, #fffaf4 100%); min-height: 320rpx; }
 .bubble.user { box-shadow: 0 12rpx 24rpx -14rpx rgba(255, 95, 62, 0.5); }
+
+/* ===== 移动端输入体验 ===== */
+.page.keyboard-open { padding-bottom: 40rpx; }
+.composer { position: relative; z-index: 5; }
+.composer-input { font-size: 32rpx; padding: 16rpx 0; min-height: 76rpx; }
+.composer-btn { flex-shrink: 0; }
+
+/* ===== 输入框悬浮固定 ===== */
+.composer {
+  position: fixed;
+  left: 28rpx;
+  right: 28rpx;
+  bottom: calc(142rpx + env(safe-area-inset-bottom));
+  margin-top: 0;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 544px;
+  z-index: 85;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(22rpx);
+}
+
+.page,
+.page.keyboard-open {
+  padding-bottom: 380rpx;
+}
 </style>
