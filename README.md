@@ -34,6 +34,7 @@
 - [本机账号说明](#本机账号说明)
 - [本地运行](#本地运行)
 - [部署到 GitHub Pages（推荐）](#部署到-github-pages推荐)
+- [自动部署流程（DEPLOY.md）](DEPLOY.md)
 - [目录结构](#目录结构)
 - [数据与隐私](#数据与隐私)
 - [可选：FastAPI 后端](#可选fastapi-后端)
@@ -119,6 +120,8 @@ python -m http.server 8080 --directory dist/build/h5
 
 推送到 `main` 分支后，`.github/workflows/deploy.yml` 会自动构建并发布。
 
+> 完整的自动部署流程（Pages + 自建服务器、首次配置 Secrets、回滚、排错、HTTPS）见 **[DEPLOY.md](DEPLOY.md)**。
+
 ### 第一次部署（只需要做一次）
 
 1. 把项目推到 GitHub 仓库（默认分支 `main`）。
@@ -202,6 +205,7 @@ tongban_project/
 ├─ nginx/nginx.conf                 # 可选：服务器部署用
 ├─ docker-compose.yml               # 可选：后端 + Nginx 一键启动
 ├─ docs/                            # README 预览图
+├─ DEPLOY.md                        # 自动部署完整流程（Pages + 云服务器 + 回滚 + 排错）
 └─ .github/workflows/
    ├─ deploy.yml                    # GitHub Pages 自动部署（默认）
    └─ deploy-server.yml             # 部署到自己的服务器（push main 自动 + 手动触发）
