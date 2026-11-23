@@ -103,7 +103,7 @@ jobs:
           fi
           printf 'DASHSCOPE_API_KEY=%s\n' "$AI_KEY" > /tmp/tongban-ai.env
           scp /tmp/tongban-ai.env "$SERVER_USER@$SERVER_HOST:/tmp/tongban-ai.env"
-          ssh "$SERVER_USER@$SERVER_HOST" "DEPLOY='${DEPLOY_PATH:-/data/myproject}'; mkdir -p \"\$DEPLOY\"; touch \"\$DEPLOY/.env\"; grep -v '^DASHSCOPE_API_KEY=' \"\$DEPLOY/.env\" > /tmp/tongban.env.tmp || true; cat /tmp/tongban-ai.env >> /tmp/tongban.env.tmp; mv /tmp/tongban.env.tmp \"\$DEPLOY/.env\"; chmod 600 \"\$DEPLOY/.env\"; rm -f /tmp/tongban-ai.env; echo '.env 已更新 AI Key'"
+          ssh "$SERVER_USER@$SERVER_HOST" "DEPLOY='${DEPLOY_PATH:-/data/myproject}'; mkdir -p \"\$DEPLOY\"; touch \"\$DEPLOY/.env\"; cp -a \"\$DEPLOY/.env\" \"\$DEPLOY/.env.bak\" 2>/dev/null || true; sed -i '/^DASHSCOPE_API_KEY=/d' \"\$DEPLOY/.env\"; cat /tmp/tongban-ai.env >> \"\$DEPLOY/.env\"; chmod 600 \"\$DEPLOY/.env\"; rm -f /tmp/tongban-ai.env; grep -q '^MYSQL_PASSWORD=.\+' \"\$DEPLOY/.env\" || echo 'WARN: .env 缺少 MYSQL_PASSWORD'; echo '.env 已更新 AI Key'"
           rm -f /tmp/tongban-ai.env
 
       - name: Deploy on server
@@ -148,7 +148,7 @@ jobs:
             echo ">>> .env already exists, keeping it"
           fi
 
-          # 1.6 自动生成 MySQL 与 JWT 配置（只生成一次，之后保留）
+          # 1.6 校验/生成 MySQL 与 JWT 配置（已有值绝不覆盖）
           gen_secret() {
             if command -v openssl >/dev/null 2>&1; then
               openssl rand -hex "$1"
@@ -156,14 +156,30 @@ jobs:
               head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'
             fi
           }
+          volume_exists=0
+          if docker volume inspect myproject_tongban-mysql >/dev/null 2>&1; then
+            volume_exists=1
+          fi
           ensure_env() {
             key="$1"
             value="$2"
-            if ! grep -q "^${key}=.+" .env 2>/dev/null; then
-              sed -i "/^${key}=/d" .env 2>/dev/null || true
-              printf '%s=%s\n' "$key" "$value" >> .env
-              echo "  + generated $key"
+            if grep -q "^${key}=" .env 2>/dev/null; then
+              if ! grep -q "^${key}=.+" .env 2>/dev/null; then
+                echo "❌ .env 中 $key 为空；为避免数据库密码错乱，部署中止"
+                exit 1
+              fi
+              return 0
             fi
+            if [ "$volume_exists" = "1" ]; then
+              case "$key" in
+                MYSQL_*)
+                  echo "❌ 检测到已有 MySQL 数据卷，但 .env 缺少 $key；为避免数据丢失，部署中止"
+                  exit 1
+                  ;;
+              esac
+            fi
+            printf '%s=%s\n' "$key" "$value" >> .env
+            echo "  + generated $key"
           }
           ensure_env MYSQL_DATABASE "tongban"
           ensure_env MYSQL_USER "tongban"
@@ -172,6 +188,20 @@ jobs:
           ensure_env JWT_SECRET "$(gen_secret 32)"
           ensure_env PIP_INDEX_URL "https://mirrors.aliyun.com/pypi/simple/"
           chmod 600 .env
+
+          set -a
+          . ./.env
+          set +a
+
+          # 1.7 已有 MySQL 容器时，密码必须与 .env 一致，否则拒绝重建
+          if docker inspect tongban-mysql >/dev/null 2>&1; then
+            cur_pw=$(docker inspect tongban-mysql --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^MYSQL_PASSWORD=//p')
+            cur_root=$(docker inspect tongban-mysql --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^MYSQL_ROOT_PASSWORD=//p')
+            if [ -n "$cur_pw" ] && { [ "$cur_pw" != "$MYSQL_PASSWORD" ] || [ "$cur_root" != "$MYSQL_ROOT_PASSWORD" ]; }; then
+              echo "❌ 现有 MySQL 容器密码与 .env 不一致，拒绝重建（请先统一密码并备份数据）"
+              exit 1
+            fi
+          fi
 
           # 2. 后端代码（保留数据库和 .env）
           echo ">>> Extracting backend..."
@@ -185,7 +215,7 @@ jobs:
 
           # 4. 启动 MySQL 并等待健康（不停止旧站）
           echo ">>> Starting MySQL..."
-          $DC up -d mysql
+          $DC up -d --no-recreate mysql
           echo ">>> Waiting for MySQL..."
           mysql_ready=0
           for i in $(seq 1 60); do
@@ -201,6 +231,12 @@ jobs:
           if [ "$mysql_ready" != "1" ]; then
             echo "❌ MySQL 未就绪，旧站保持运行"
             $DC logs --tail=50 mysql
+            exit 1
+          fi
+
+          # 4.5 校验应用账号能否登录（密码与数据卷不一致时立即中止）
+          if ! $DC exec -T mysql mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; then
+            echo "❌ 应用数据库账号无法登录（.env 与数据卷密码不一致），已中止，旧站保持运行"
             exit 1
           fi
 
