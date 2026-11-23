@@ -45,7 +45,11 @@ app = FastAPI(title="童伴成长 API", version="3.0.0")
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "").strip()
 QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-turbo").strip() or "qwen-turbo"
-QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").rstrip("/")
+QWEN_BASE_URL = (
+    os.getenv("QWEN_BASE_URL", "").strip()
+    or os.getenv("DASHSCOPE_BASE_URL", "").strip()
+    or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+).rstrip("/")
 QWEN_ENDPOINT = f"{QWEN_BASE_URL}/chat/completions"
 MAX_STATE_BYTES = 2_000_000
 
