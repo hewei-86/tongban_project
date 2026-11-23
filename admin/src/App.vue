@@ -10,7 +10,9 @@ const tab = ref('dashboard')
 const loading = ref(false)
 const error = ref('')
 const notice = ref('')
-const loginForm = reactive({ username: '', password: '' })
+const loginForm = reactive({ username: 'admin', password: '' })
+const usernameInput = ref(null)
+const passwordInput = ref(null)
 
 const dashboard = ref(null)
 const users = ref({ items: [], total: 0, page: 1 })
@@ -64,19 +66,28 @@ async function api(path, options = {}) {
   if (!response.ok) {
     if (response.status === 401) logout(false)
     const detail = data?.detail
-    const message = typeof detail === 'string' ? detail : detail?.message || `请求失败（${response.status}）`
+    let message
+    if (typeof detail === 'string') message = detail
+    else if (Array.isArray(detail)) message = detail.map((item) => item.msg || '参数不正确').join('；')
+    else message = detail?.message || `请求失败（${response.status}）`
     throw new Error(message)
   }
   return data
 }
 
 async function login() {
+  const username = String(loginForm.username || usernameInput.value?.value || '').trim()
+  const password = String(loginForm.password || passwordInput.value?.value || '')
+  if (!username || !password) {
+    error.value = '请输入管理员账号和密码'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
     const data = await api('/login', {
       method: 'POST',
-      body: { username: loginForm.username, password: loginForm.password }
+      body: { username, password }
     })
     token.value = data.token
     admin.value = data.user
@@ -258,11 +269,11 @@ onMounted(async () => {
       </div>
       <label class="field">
         <span>管理员账号</span>
-        <input v-model="loginForm.username" autocomplete="username" placeholder="admin" @keyup.enter="login" />
+        <input ref="usernameInput" v-model.trim="loginForm.username" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="admin" @keyup.enter="login" />
       </label>
       <label class="field">
         <span>密码</span>
-        <input v-model="loginForm.password" type="password" autocomplete="current-password" placeholder="请输入密码" @keyup.enter="login" />
+        <input ref="passwordInput" v-model="loginForm.password" type="password" autocomplete="current-password" placeholder="请输入密码" @keyup.enter="login" />
       </label>
       <button class="btn primary block" :disabled="loading" @click="login">{{ loading ? '登录中…' : '登录后台' }}</button>
       <p v-if="error" class="msg error">{{ error }}</p>
