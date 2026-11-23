@@ -32,6 +32,7 @@
 ## 目录
 
 - [功能一览](#功能一览)
+- [项目说明与商业化方案（PROJECT.md）](PROJECT.md)
 - [账号与数据模式](#账号与数据模式)
 - [本地运行](#本地运行)
 - [部署到 GitHub Pages（推荐）](#部署到-github-pages推荐)
@@ -231,6 +232,7 @@ tongban_project/
 ├─ nginx/nginx.conf                 # 服务器部署用（/api、/ws 反代）
 ├─ docker-compose.yml               # MySQL + 后端 + Nginx
 ├─ docs/                            # README 预览图
+├─ PROJECT.md                       # 项目说明、痛点、商业模式、讲解稿
 ├─ DEPLOY.md                        # 自动部署完整流程（Pages + 云服务器 + 回滚 + 排错）
 ├─ .env.example                     # 环境变量示例（MySQL / JWT / AI Key）
 └─ .github/workflows/
