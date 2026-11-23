@@ -164,7 +164,7 @@ jobs:
             key="$1"
             value="$2"
             if grep -q "^${key}=" .env 2>/dev/null; then
-              if ! grep -q "^${key}=.+" .env 2>/dev/null; then
+              if ! grep -qE "^${key}=.+" .env 2>/dev/null; then
                 echo "❌ .env 中 $key 为空；为避免数据库密码错乱，部署中止"
                 exit 1
               fi
