@@ -1,13 +1,13 @@
 """
-后端接口自测脚本（不依赖真实服务器，使用 FastAPI TestClient）。
+后端接口自测（FastAPI TestClient + 临时 SQLite）。
+
+覆盖：健康检查、注册 / 登录 / JWT、账号数据隔离、版本冲突、未授权访问、
+AI 出题开关、密码不明文存储。
 
 用法：
     cd backend
     .venv\\Scripts\\python.exe test_api.py     # Windows
     python test_api.py                        # macOS / Linux
-
-脚本会自动使用临时数据库 test_tongban.db，运行结束后删除，
-不会影响你的 tongban.db。
 """
 
 import os
@@ -19,14 +19,17 @@ DB_PATH = BASE_DIR / "test_tongban.db"
 if DB_PATH.exists():
     DB_PATH.unlink()
 
-# 必须在导入 main 之前设置环境变量：用临时库、关闭真实 AI 调用
+# 必须在导入 main 之前设置环境变量
 os.environ["DATABASE_URL"] = f"sqlite:///{DB_PATH.as_posix()}"
+os.environ["JWT_SECRET"] = "test-secret-for-local-only-please-change-1234567890"
 os.environ["DASHSCOPE_API_KEY"] = ""
 sys.path.insert(0, str(BASE_DIR))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from database import SessionLocal  # noqa: E402
 from main import app, engine  # noqa: E402
+from models import User  # noqa: E402
 
 passed = 0
 failed = 0
@@ -44,127 +47,111 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 def main() -> int:
     with TestClient(app) as client:
-        def get(path: str):
-            return client.get(path)
+        # ---------- 健康检查 ----------
+        r = client.get("/api/health")
+        health = r.json()
+        check("健康检查", r.status_code == 200 and health.get("ok") is True, r.text[:120])
+        check("健康检查返回数据库类型", health.get("database") == "sqlite", str(health))
 
-        def post(path: str, payload=None):
-            return client.post(path, json=payload if payload is not None else {})
+        # ---------- 注册 / 登录 ----------
+        alice_payload = {"username": "alice_01", "password": "secret123", "nickname": "小艾"}
+        r = client.post("/api/auth/register", json=alice_payload)
+        alice = r.json()
+        check("注册成功", r.status_code == 200 and alice.get("token"), r.text[:160])
+        alice_uid = alice.get("user", {}).get("id")
+        alice_token = alice.get("token", "")
 
-        r = get("/api/health")
-        check("健康检查", r.status_code == 200 and r.json().get("ok") is True, r.text[:120])
+        r = client.post("/api/auth/register", json=alice_payload)
+        check("重复注册被拒绝", r.status_code == 409, r.text[:120])
 
-        r = get("/api/dashboard?user_id=2")
-        data = r.json()
-        check("学习首页", r.status_code == 200 and data.get("user_id") == 2, r.text[:120])
-        check("首页字段完整", {"points", "level", "streak_days", "checkin_today"} <= set(data.keys()))
+        r = client.post("/api/auth/login", json={"username": "alice_01", "password": "wrong-pass"})
+        check("错误密码登录失败", r.status_code == 401, r.text[:120])
 
-        r = get("/api/questions?subject=math&grade=1")
-        check("题库查询", r.status_code == 200 and len(r.json()) >= 5, r.text[:120])
-        r = get("/api/questions?subject=%E6%95%B0%E5%AD%A6&grade=1")
-        check("学科中文别名", r.status_code == 200 and len(r.json()) >= 5, r.text[:120])
+        r = client.post("/api/auth/login", json={"username": "ALICE_01", "password": "secret123"})
+        check("账号大小写不敏感登录", r.status_code == 200 and r.json().get("token"), r.text[:120])
 
-        r = post("/api/learning/submit", {"user_id": 2, "question_id": 1, "answer": "15", "time_spent": 30})
-        result = r.json()
-        check("答题提交", r.status_code == 200 and result.get("is_correct") is True, r.text[:120])
-        check("答题返回成就字段", "new_achievements" in result)
+        headers_alice = {"Authorization": f"Bearer {alice_token}"}
+        r = client.get("/api/auth/me", headers=headers_alice)
+        check("读取当前用户", r.status_code == 200 and r.json()["user"]["username"] == "alice_01", r.text[:120])
 
-        r = post("/api/learning/submit", {"user_id": 2, "question_id": 2, "answer": "6", "time_spent": 20})
-        check("答错判定", r.status_code == 200 and r.json().get("is_correct") is False, r.text[:120])
+        r = client.get("/api/auth/me")
+        check("未登录访问被拒绝", r.status_code == 401, r.text[:120])
 
-        r = get("/api/wrong-book?user_id=2")
-        wrong_list = r.json()
-        check("错题本列出错题", r.status_code == 200 and len(wrong_list) >= 1, r.text[:120])
-        if wrong_list:
-            wrong_id = wrong_list[0]["id"]
-            r = post(f"/api/wrong-book/retry/{wrong_id}", {"answer": "7"})
-            check("错题重做", r.status_code == 200 and r.json().get("is_correct") is True, r.text[:160])
-            r = post(f"/api/wrong-book/master/{wrong_id}")
-            check("标记掌握", r.status_code == 200 and r.json().get("ok") is True)
+        r = client.get("/api/state", headers={"Authorization": "Bearer not-a-real-token"})
+        check("伪造 token 被拒绝", r.status_code == 401, r.text[:120])
 
-        r = post("/api/checkin", {"user_id": 2})
-        first = r.json()
-        check("签到成功", r.status_code == 200 and first.get("already") is False and first.get("ok") is True, r.text[:120])
-        r = post("/api/checkin", {"user_id": 2})
-        check("重复签到", r.status_code == 200 and r.json().get("already") is True, r.text[:120])
+        # ---------- 账号状态同步 ----------
+        r = client.get("/api/state", headers=headers_alice)
+        state = r.json()
+        check("新账号初始状态为空", r.status_code == 200 and state.get("version") == 0 and state.get("data") is None, r.text[:120])
 
-        r = get("/api/tasks/daily?user_id=2&grade=1")
-        tasks = r.json()
-        check("每日任务", r.status_code == 200 and len(tasks) == 3, r.text[:120])
+        alice_state = {
+            "version": 1,
+            "settings": {"role": "child", "grade": 2},
+            "profiles": [{"user_id": 1, "points": 12}],
+            "records": [{"id": 1, "subject": "math", "is_correct": True}],
+        }
+        r = client.put("/api/state", headers=headers_alice, json={"base_version": 0, "data": alice_state})
+        check("首次上传账号数据", r.status_code == 200 and r.json().get("version") == 1, r.text[:160])
 
-        r = post("/api/practice/generate", {
-            "user_id": 2, "subject": "math", "grade": 2, "count": 3, "include_answer": True,
-        })
+        alice_state["profiles"][0]["points"] = 15
+        r = client.put("/api/state", headers=headers_alice, json={"base_version": 1, "data": alice_state})
+        check("版本递增保存", r.status_code == 200 and r.json().get("version") == 2, r.text[:160])
+
+        r = client.get("/api/state", headers=headers_alice)
+        check("读取已保存数据", r.status_code == 200 and r.json()["data"]["profiles"][0]["points"] == 15, r.text[:160])
+
+        r = client.put("/api/state", headers=headers_alice, json={"base_version": 1, "data": alice_state})
+        conflict = r.json().get("detail", {})
+        check("旧版本写入被拒绝", r.status_code == 409 and conflict.get("version") == 2, r.text[:160])
+        check("冲突响应带最新数据", conflict.get("data", {}).get("profiles", [{}])[0].get("points") == 15, str(conflict)[:160])
+
+        # ---------- 第二个账号的数据隔离 ----------
+        r = client.post(
+            "/api/auth/register",
+            json={"username": "bob_2026", "password": "bobpass123", "nickname": "小博"},
+        )
+        bob = r.json()
+        bob_token = bob.get("token", "")
+        check("第二个账号注册", r.status_code == 200 and bob_token, r.text[:160])
+        headers_bob = {"Authorization": f"Bearer {bob_token}"}
+
+        r = client.get("/api/state", headers=headers_bob)
+        check("新账号看不到别人的数据", r.status_code == 200 and r.json().get("version") == 0 and r.json().get("data") is None, r.text[:160])
+
+        bob_state = {"version": 1, "settings": {"role": "parent", "grade": 1}, "records": []}
+        r = client.put("/api/state", headers=headers_bob, json={"base_version": 0, "data": bob_state})
+        check("第二个账号写入自己的数据", r.status_code == 200 and r.json().get("version") == 1, r.text[:160])
+
+        r = client.get("/api/state", headers=headers_alice)
+        check("账号 A 数据不受 B 影响", r.status_code == 200 and r.json()["data"]["profiles"][0]["points"] == 15, r.text[:160])
+
+        # ---------- AI 出题（未配置 Key） ----------
+        r = client.post(
+            "/api/practice/generate",
+            headers=headers_alice,
+            json={"user_id": 1, "subject": "math", "grade": 1, "count": 3},
+        )
         payload = r.json()
-        check("出题接口", r.status_code == 200 and len(payload.get("questions", [])) >= 1, r.text[:160])
-        check("出题标记来源", payload.get("ai_generated") is False, r.text[:160])
-        ai_questions = payload.get("questions", [])
-        if ai_questions:
-            check("出题会落库并返回真实 id", ai_questions[0].get("id", 0) > 0)
-            check("出题包含答案供本地判题", bool(ai_questions[0].get("answer")))
-            r = post("/api/learning/submit", {
-                "user_id": 2,
-                "question_id": ai_questions[0]["id"],
-                "answer": "0",
-                "time_spent": 20,
-            })
-            check("AI 题可提交", r.status_code == 200, r.text[:120])
+        check("未配置 Key 时 AI 出题降级", r.status_code == 200 and payload.get("ai_enabled") is False, r.text[:160])
+        check("降级时不返回题目", payload.get("questions") == [], str(payload)[:160])
 
-        r = post("/api/practice/generate", {"user_id": 2, "subject": "math", "grade": 2, "count": 2})
-        hidden = (r.json().get("questions") or [{}])[0]
-        check("默认不泄露答案", "answer" not in hidden)
+        r = client.post("/api/practice/generate", json={"user_id": 1, "subject": "math", "grade": 1, "count": 3})
+        check("AI 出题需要登录", r.status_code == 401, r.text[:120])
 
-        r = post("/api/ai/chat", {"user_id": 2, "grade": 1, "message": "8+7等于几"})
-        check("AI 问答（演示模式）", r.status_code == 200 and "15" in r.json().get("answer", ""), r.text[:120])
+        # ---------- 密码安全 ----------
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.username == "alice_01").first()
+            check("密码不以明文保存", bool(user) and user.password_hash != "secret123" and user.password_hash.startswith("pbkdf2_sha256$"), user.password_hash[:40] if user else "")
+        finally:
+            db.close()
 
-        r = get("/api/reports/weekly?child_id=2")
-        report = r.json()
-        check("周报", r.status_code == 200 and report.get("total_records", 0) >= 2, r.text[:120])
+        # ---------- 失败状态码 ----------
+        r = client.put("/api/state", headers=headers_alice, json={"base_version": 0, "data": {"x": "y"}})
+        check("冲突时不会覆盖数据", r.status_code == 409, r.text[:120])
 
-        r = get("/api/reports/monthly?child_id=2")
-        check("月报", r.status_code == 200 and "accuracy" in r.json(), r.text[:120])
-
-        r = post("/api/goals", {"family_id": 1, "child_user_id": 2, "parent_user_id": 1,
-                                "title": "每天 10 分钟口算", "target_minutes": 10})
-        goal = r.json()
-        check("创建目标", r.status_code == 200 and goal.get("ok") is True, r.text[:120])
-        r = get("/api/goals?child_id=2")
-        check("目标列表", r.status_code == 200 and len(r.json()) >= 1, r.text[:120])
-        r = post(f"/api/goals/{goal['id']}/complete")
-        check("完成目标", r.status_code == 200 and r.json().get("ok") is True)
-
-        r = post("/api/evaluations", {"family_id": 1, "direction": "parent_to_child",
-                                      "item": "学习主动性", "score": 5, "comment": "今天很主动"})
-        check("家长评价孩子", r.status_code == 200 and r.json().get("ok") is True, r.text[:120])
-        r = post("/api/evaluations", {"family_id": 1, "direction": "child_to_parent",
-                                      "item": "陪伴时间", "score": 4, "comment": "谢谢陪我"})
-        check("孩子评价家长", r.status_code == 200 and r.json().get("ok") is True, r.text[:120])
-        r = get("/api/family/harmony?family_id=1")
-        check("默契度", r.status_code == 200 and r.json().get("count") == 2, r.text[:120])
-
-        r = get("/api/growth?child_id=2")
-        check("成长档案", r.status_code == 200 and "level" in r.json(), r.text[:120])
-        r = get("/api/growth-curve?child_id=2&days=7")
-        check("成长曲线", r.status_code == 200 and len(r.json()) == 7, r.text[:120])
-        r = get("/api/achievements?child_id=2")
-        check("成就列表", r.status_code == 200 and len(r.json()) >= 10, r.text[:120])
-        r = get("/api/leaderboard?family_id=1")
-        check("家庭榜", r.status_code == 200 and len(r.json()) >= 1, r.text[:120])
-
-        r = post("/api/challenge/submit", {"user_id": 2, "score": 30, "correct": 7, "total": 9, "seconds": 60})
-        challenge = r.json()
-        check("速算挑战提交", r.status_code == 200 and challenge.get("best") == 30, r.text[:160])
-        check("挑战奖励计算", challenge.get("points_earned") == 19 and challenge.get("is_new_best") is True)
-        r = get("/api/challenge/best?user_id=2")
-        check("挑战最高分", r.status_code == 200 and r.json().get("best") == 30, r.text[:120])
-
-        r = post("/api/time-limit", {"child_user_id": 2, "daily_limit_minutes": 45, "warning_minutes": 35})
-        check("时长限制", r.status_code == 200 and r.json().get("daily_limit_minutes") == 45, r.text[:120])
-        r = get("/api/time-limit?child_user_id=2")
-        check("读取时长限制", r.status_code == 200 and r.json().get("daily_limit_minutes") == 45, r.text[:120])
-
-        r = get("/api/parent/dashboard?family_id=1")
-        parent = r.json()
-        check("家长看板", r.status_code == 200 and len(parent.get("children", [])) == 1, r.text[:120])
+        check("用户 id 存在", isinstance(alice_uid, int) and alice_uid > 0, str(alice_uid))
 
     print()
     print(f"通过 {passed} 项，失败 {failed} 项")

@@ -6,7 +6,7 @@
         <view class="profile-avatar">{{ avatarText }}</view>
         <view class="profile-main">
           <text class="profile-name">{{ displayName }}</text>
-          <text class="profile-sub">{{ account ? `账号 ${maskAccount(account.account)} · Lv.${growth.level || 1}` : `游客体验 · Lv.${growth.level || 1}` }}</text>
+          <text class="profile-sub">{{ account ? `${isRemote ? '云端账号' : '账号'} ${maskAccount(account.account)} · Lv.${growth.level || 1}` : `游客体验 · Lv.${growth.level || 1}` }}</text>
         </view>
         <view class="profile-points">
           <text class="pp-num">{{ isParent ? familyMinutes : growth.points || 0 }}</text>
@@ -16,7 +16,7 @@
 
       <view class="account-strip">
         <text class="account-strip-text">
-          {{ account ? '已登录本机账号，学习记录独立保存' : '登录后，学习记录按账号分开保存' }}
+          {{ account ? (isRemote ? '已登录云端账号，学习数据自动同步' : '已登录本机账号，学习记录独立保存') : '登录后，学习记录按账号分开保存' }}
         </text>
         <view class="account-strip-actions">
           <template v-if="!account">
@@ -97,8 +97,8 @@
     <view class="card">
       <view class="card-head">
         <view>
-          <text class="card-title">本机数据</text>
-          <text class="card-sub">保存在浏览器，不上传服务器</text>
+          <text class="card-title">{{ isRemote ? '账号数据' : '本机数据' }}</text>
+          <text class="card-sub">{{ isRemote ? '已同步到云端，换设备登录也能看到' : '保存在浏览器，不上传服务器' }}</text>
         </view>
         <text class="tag">{{ stats.kb || 0 }} KB</text>
       </view>
@@ -137,7 +137,7 @@
       </view>
 
       <text class="data-tip">
-        刷新或关闭浏览器不会丢数据；清理浏览器数据、换设备后需要重新开始。建议定期导出备份。
+        {{ isRemote ? '学习数据会自动同步到云端；换设备登录同一账号即可恢复。建议定期导出备份。' : '刷新或关闭浏览器不会丢数据；清理浏览器数据、换设备后需要重新开始。建议定期导出备份。' }}
       </text>
     </view>
 
@@ -189,6 +189,9 @@ import { session, switchGrade, switchRole, syncSession } from '../../services/se
 import { CHILD_ID } from '../../services/engineCore.js'
 import { getCurrentAccount, logout } from '../../services/auth.js'
 import { maskAccount } from '../../services/authRules.js'
+import { IS_REMOTE } from '../../config.js'
+
+const isRemote = IS_REMOTE
 
 const version = '2.1.0'
 const repoUrl = 'https://github.com/hewei-86/tongban_project'
@@ -245,7 +248,7 @@ async function doLogout() {
   const confirmed = await new Promise((resolve) => {
     uni.showModal({
       title: '退出登录',
-      content: '退出后会回到游客模式，账号数据仍保存在本机，下次登录还能看到。',
+      content: isRemote ? '退出后需要重新登录；云端学习数据仍会保留。' : '退出后会回到游客模式，账号数据仍保存在本机，下次登录还能看到。',
       confirmText: '退出',
       success: (res) => resolve(Boolean(res.confirm)),
       fail: () => resolve(false)
@@ -254,6 +257,10 @@ async function doLogout() {
   if (!confirmed) return
   logout()
   account.value = null
+  if (isRemote) {
+    uni.reLaunch({ url: '/pages/auth/login/login' })
+    return
+  }
   syncSession()
   load()
   toast('已退出，回到游客模式')

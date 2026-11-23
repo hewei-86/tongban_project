@@ -2,13 +2,13 @@
   <view class="auth-page">
     <view class="auth-brand">
       <view class="auth-mark">童</view>
-      <text class="auth-name">创建本机账号</text>
-      <text class="auth-slogan">每个账号有独立的学习记录、积分和错题本</text>
+      <text class="auth-name">{{ isRemote ? '创建云端账号' : '创建本机账号' }}</text>
+      <text class="auth-slogan">{{ isRemote ? '账号与学习记录保存在服务器，换设备登录就能同步' : '每个账号有独立的学习记录、积分和错题本' }}</text>
     </view>
 
     <view class="auth-card">
       <text class="auth-title">注册</text>
-      <text class="auth-sub">注册后会自动登录；账号信息只保存在当前浏览器</text>
+      <text class="auth-sub">{{ isRemote ? '注册后会自动登录，学习数据会同步到云端' : '注册后会自动登录；账号信息只保存在当前浏览器' }}</text>
 
       <text class="auth-field">昵称</text>
       <input
@@ -55,7 +55,7 @@
       <view class="agree-row" @click="agreed = !agreed">
         <view class="agree-box" :class="{ checked: agreed }">{{ agreed ? '✓' : '' }}</view>
         <text class="agree-text">
-          我知道这是本机账号：换设备或清理浏览器数据后需要重新注册，游客模式的数据不会自动迁移过来。
+          {{ isRemote ? '我知道账号与学习数据会保存到服务器；请由家长陪同注册，并使用监护人的联系方式管理账号。' : '我知道这是本机账号：换设备或清理浏览器数据后需要重新注册，游客模式的数据不会自动迁移过来。' }}
         </text>
       </view>
 
@@ -69,12 +69,12 @@
 
       <view class="auth-links">
         <text class="auth-link" @click="goLogin">已有账号，去登录</text>
-        <text class="auth-link muted-link" @click="goGuest">先随便看看</text>
+        <text v-if="!isRemote" class="auth-link muted-link" @click="goGuest">先随便看看</text>
       </view>
     </view>
 
     <text class="auth-note">
-      密码使用随机盐 + PBKDF2-SHA256 处理后保存在本机，不会明文上传。
+      {{ isRemote ? '密码使用随机盐 + PBKDF2-SHA256 处理后保存到服务器，不会明文存储；学习数据会同步到云端。' : '密码使用随机盐 + PBKDF2-SHA256 处理后保存在本机，不会明文上传。' }}
       本项目用于学习演示，请不要使用你在其它网站的真实密码。
     </text>
   </view>
@@ -90,6 +90,9 @@ import {
   validatePasswordConfirm
 } from '../../../services/authRules.js'
 import { syncSession } from '../../../services/session.js'
+import { IS_REMOTE } from '../../../config.js'
+
+const isRemote = IS_REMOTE
 
 const form = ref({
   nickname: '',
@@ -115,7 +118,7 @@ function firstError() {
   const confirmCheck = validatePasswordConfirm(form.value.password, form.value.confirmPassword)
   if (!confirmCheck.ok) return confirmCheck.message
 
-  if (!agreed.value) return '请先确认本机账号的说明'
+  if (!agreed.value) return isRemote ? '请先确认账号与数据同步说明' : '请先确认本机账号的说明'
   return ''
 }
 
@@ -154,6 +157,7 @@ function goLogin() {
 }
 
 function goGuest() {
+  if (isRemote) return
   uni.reLaunch({ url: '/pages/index/index' })
 }
 </script>

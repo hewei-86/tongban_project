@@ -3,12 +3,12 @@
     <view class="auth-brand">
       <view class="auth-mark">童</view>
       <text class="auth-name">童伴成长</text>
-      <text class="auth-slogan">登录后，学习记录只属于这个账号</text>
+      <text class="auth-slogan">{{ isRemote ? '登录后，学习记录会在不同设备之间同步' : '登录后，学习记录只属于这个账号' }}</text>
     </view>
 
     <view class="auth-card">
       <text class="auth-title">欢迎回来</text>
-      <text class="auth-sub">账号保存在这台设备的浏览器里，不会上传服务器</text>
+      <text class="auth-sub">{{ isRemote ? '账号与学习数据保存在云端，换设备登录即可恢复' : '账号保存在这台设备的浏览器里，不会上传服务器' }}</text>
 
       <view v-if="accounts.length" class="account-chips">
         <view v-for="item in accounts" :key="item.id" class="account-chip" @click="fillAccount(item)">
@@ -50,7 +50,7 @@
 
       <view class="auth-links">
         <text class="auth-link" @click="goRegister">注册新账号</text>
-        <text class="auth-link muted-link" @click="goGuest">先随便看看</text>
+        <text v-if="!isRemote" class="auth-link muted-link" @click="goGuest">先随便看看</text>
       </view>
 
       <view v-if="current" class="auth-logged">
@@ -63,7 +63,7 @@
     </view>
 
     <text class="auth-note">
-      密码经过加盐哈希后保存在本机，不以明文存储。换设备或清理浏览器数据后，需要重新注册账号。
+      {{ isRemote ? '密码经过加盐哈希后保存到服务器，不以明文存储；学习数据会自动同步到云端。' : '密码经过加盐哈希后保存在本机，不以明文存储。换设备或清理浏览器数据后，需要重新注册账号。' }}
       本页面是学习演示项目，请不要使用你在其它网站的真实密码。
     </text>
   </view>
@@ -75,6 +75,9 @@ import { onShow } from '@dcloudio/uni-app'
 import { getCurrentAccount, listAccounts, login, logout } from '../../../services/auth.js'
 import { maskAccount, validateAccount } from '../../../services/authRules.js'
 import { syncSession } from '../../../services/session.js'
+import { IS_REMOTE } from '../../../config.js'
+
+const isRemote = IS_REMOTE
 
 const form = ref({ account: '', password: '' })
 const showPassword = ref(false)
@@ -134,6 +137,7 @@ function goRegister() {
 }
 
 function goGuest() {
+  if (isRemote) return
   uni.reLaunch({ url: '/pages/index/index' })
 }
 
@@ -147,6 +151,6 @@ function doLogout() {
   current.value = null
   form.value.password = ''
   error.value = ''
-  uni.showToast({ title: '已退出，回到游客模式', icon: 'none' })
+  uni.showToast({ title: isRemote ? '已退出登录' : '已退出，回到游客模式', icon: 'none' })
 }
 </script>

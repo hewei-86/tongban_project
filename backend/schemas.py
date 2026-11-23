@@ -77,3 +77,20 @@ class EvaluationCreateRequest(BaseModel):
     item: str = Field(min_length=1, max_length=100)
     score: int = Field(ge=1, le=5)
     comment: str = Field(default="", max_length=500)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=4, max_length=20, pattern=r"^[A-Za-z0-9_]+$")
+    password: str = Field(min_length=6, max_length=64)
+    nickname: str = Field(default="", max_length=12)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=1, max_length=64)
+
+
+class StateUpdateRequest(BaseModel):
+    base_version: int = Field(default=0, ge=0)
+    data: dict
+

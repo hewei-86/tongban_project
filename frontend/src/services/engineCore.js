@@ -233,10 +233,19 @@ export function createEngine(storage, options = {}) {
   }
 
   function commit() {
+    let serialized = ''
     try {
-      storage.write(JSON.stringify(state))
+      serialized = JSON.stringify(state)
+      storage.write(serialized)
     } catch (error) {
       // 隐私模式 / 存储满时静默降级为内存态，不影响使用
+    }
+    if (serialized && typeof options.onCommit === 'function') {
+      try {
+        options.onCommit(serialized)
+      } catch (error) {
+        // 同步失败不阻断本地使用
+      }
     }
   }
 

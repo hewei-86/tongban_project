@@ -1,11 +1,81 @@
 <script>
+import { IS_REMOTE } from './config.js'
+import { getCurrentAccount, isLoggedIn } from './services/auth.js'
+import { activateAccount } from './services/engine.js'
+import { getUserId, pullIfNewer, setConflictHandler, writeCache, flush } from './services/stateSync.js'
+import { syncSession } from './services/session.js'
+
+function reloadCurrentPage() {
+  const pages = getCurrentPages()
+  const current = pages[pages.length - 1]
+  const route = current && current.route
+  if (!route || route.startsWith('pages/auth/')) return
+  uni.reLaunch({ url: `/${route}` })
+}
+
+function applyRemoteState(data) {
+  const userId = getUserId()
+  if (!userId) return
+  if (data) writeCache(userId, data)
+  activateAccount(`remote_${userId}`)
+  syncSession()
+  reloadCurrentPage()
+}
+
+let syncTimer = null
+
+function stopSyncLoop() {
+  if (syncTimer) clearInterval(syncTimer)
+  syncTimer = null
+}
+
+function startSyncLoop() {
+  stopSyncLoop()
+  if (!IS_REMOTE || !isLoggedIn()) return
+  // 另一台设备修改数据后，最多 30 秒内同步到当前页面
+  syncTimer = setInterval(() => {
+    pullIfNewer()
+      .then((result) => {
+        if (result.changed) applyRemoteState(result.data)
+      })
+      .catch((error) => {
+        if (error && error.status !== 401) console.warn('[sync] 拉取失败：', error.message)
+      })
+  }, 30000)
+}
+
 export default {
   onLaunch() {
-    // 本地数据引擎在首次 import 时自动初始化，这里只做启动记录
-    console.log('童伴成长已启动 · 本地数据模式')
+    if (!IS_REMOTE) {
+      console.log('童伴成长已启动 · 本地数据模式')
+      return
+    }
+    console.log('童伴成长已启动 · 云端数据模式')
+    if (!isLoggedIn()) {
+      uni.reLaunch({ url: '/pages/auth/login/login' })
+      return
+    }
+    // 账号在其他设备被更新时，拉取最新数据并刷新当前页
+    setConflictHandler((detail) => {
+      if (detail && detail.data) applyRemoteState(detail.data)
+    })
   },
   onShow() {
-    console.log('童伴成长回到前台')
+    if (!IS_REMOTE || !isLoggedIn()) return
+    const account = getCurrentAccount()
+    if (!account) return
+    pullIfNewer()
+      .then((result) => {
+        if (result.changed) applyRemoteState(result.data)
+      })
+      .catch((error) => {
+        if (error && error.status !== 401) console.warn('[sync] 拉取失败：', error.message)
+      })
+    startSyncLoop()
+  },
+  onHide() {
+    stopSyncLoop()
+    if (IS_REMOTE) flush()
   }
 }
 </script>

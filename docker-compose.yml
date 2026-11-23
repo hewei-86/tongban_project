@@ -1,4 +1,28 @@
 services:
+  mysql:
+    image: mysql:8.0
+    container_name: tongban-mysql
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-tongban}
+      MYSQL_USER: ${MYSQL_USER:-tongban}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=256M
+    volumes:
+      - tongban-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - tongban-net
+
   backend:
     build:
       context: ./backend
@@ -6,13 +30,16 @@ services:
     container_name: tongban-backend
     restart: always
     environment:
-      - DATABASE_URL=sqlite:////app/data/tongban.db
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-tongban}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-tongban}?charset=utf8mb4
+      - JWT_SECRET=${JWT_SECRET}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
       - QWEN_MODEL=${QWEN_MODEL:-qwen-turbo}
-    volumes:
-      - tongban-data:/app/data
+      - ALLOW_ORIGINS=${ALLOW_ORIGINS:-*}
     expose:
       - "8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
     networks:
       - tongban-net
 
@@ -35,5 +62,5 @@ networks:
     driver: bridge
 
 volumes:
-  tongban-data:
+  tongban-mysql:
     driver: local

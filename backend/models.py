@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean, Date, UniqueConstraint
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean, Date, UniqueConstraint, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from database import Base
 
@@ -8,8 +8,21 @@ class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    nickname: Mapped[str] = mapped_column(String(50), default="")
+    password_hash: Mapped[str] = mapped_column(String(255), default="")
     role: Mapped[str] = mapped_column(String(20), default="child")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class UserState(Base):
+    """每个账号的完整学习数据快照（MySQL JSON 列），用于多端同步。"""
+
+    __tablename__ = "user_states"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
 
 
 class Family(Base):
