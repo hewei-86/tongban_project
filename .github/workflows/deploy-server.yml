@@ -235,7 +235,8 @@ jobs:
           fi
 
           # 4.5 校验应用账号能否登录（密码与数据卷不一致时立即中止）
-          if ! $DC exec -T mysql mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; then
+          # 注意：exec -T 会读取 stdin，必须重定向，否则会吞掉后面的部署脚本
+          if ! $DC exec -T mysql mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" </dev/null >/dev/null 2>&1; then
             echo "❌ 应用数据库账号无法登录（.env 与数据卷密码不一致），已中止，旧站保持运行"
             exit 1
           fi
