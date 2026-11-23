@@ -4,10 +4,10 @@
 
 | 流水线 | 工作流文件 | 目标 | 触发方式 | 当前地址 |
 | --- | --- | --- | --- | --- |
-| GitHub Pages | `.github/workflows/deploy.yml` | 纯静态 H5（无后端） | push `main` / 手动 | <https://hewei-86.github.io/tongban_project/> |
-| 自有云服务器 | `.github/workflows/deploy-server.yml` | H5 + FastAPI + Nginx（Docker） | push `main` / 手动 | <http://120.26.177.245/> |
+| GitHub Pages | `.github/workflows/deploy.yml` | 纯静态 H5（local 演示模式，无后端） | push `main` / 手动 | <https://hewei-86.github.io/tongban_project/> |
+| 自有云服务器 | `.github/workflows/deploy-server.yml` | H5 + FastAPI + MySQL 8 + Nginx（Docker，remote 模式） | push `main` / 手动 | <http://120.26.177.245/> |
 
-> 一次 `git push` 会**同时触发两条**流水线：Pages 用于公开展示，服务器用于完整环境（含 API / AI 出题）。
+> 一次 `git push` 会**同时触发两条**流水线：Pages 用于公开展示（本地数据），服务器用于完整产品环境（真实账号 / MySQL / AI 出题）。
 
 ---
 
@@ -43,20 +43,23 @@ flowchart LR
   C3 --> C4["发布到 GitHub Pages"]
 
   D --> D1["npm ci + 单测"]
-  D1 --> D2["构建 H5<br/>UNI_H5_BASE=/"]
+  D1 --> D2["构建 H5<br/>VITE_DATA_MODE=remote"]
   D2 --> D3["打包 后端 / H5 / Nginx"]
   D3 --> D4["SCP 上传到服务器"]
   D4 --> D5["同步 DASHSCOPE_API_KEY 到 .env"]
-  D5 --> D6["SSH: docker compose 重建"]
-  D6 --> D7["健康检查 /api/health"]
+  D5 --> D6["启动 MySQL 并等待健康"]
+  D6 --> D7["滚动替换后端 + Nginx"]
+  D7 --> D8["健康检查 /api/health"]
 ```
 
 两条流水线都会在**发布前跑前端单元测试**：测试不通过，构建和部署直接终止，线上保持旧版本。
 
+服务器版构建时注入 `VITE_DATA_MODE=remote`，前端强制登录并连接 MySQL；Pages 构建保持 `local`，继续作为本地演示。
+
 | 阶段 | 大约耗时 |
 | --- | --- |
 | Pages | 40—70 秒 |
-| 服务器 | 60—100 秒（取决于 Docker 构建缓存） |
+| 服务器 | 90—150 秒（首次含 MySQL 初始化；之后使用缓存） |
 
 ---
 
@@ -151,26 +154,30 @@ concurrency:
 | --- | --- |
 | Checkout / Node / npm ci | 与 Pages 一致 |
 | Run unit tests | 发布前跑 27 项单测 |
-| Build H5 | `UNI_H5_BASE=/`（服务器由 Nginx 托管在根路径） |
+| Build H5 | `UNI_H5_BASE=/` + `VITE_DATA_MODE=remote`（强制登录、连接 MySQL） |
 | Verify H5 build | 检查 `index.html` 是否存在 |
 | Setup SSH | 写入私钥、`ssh-keyscan` 记录主机指纹 |
 | Package artifacts | 打三个包：`backend.tar.gz`、`h5.tar.gz`、`infra.tar.gz`（`docker-compose.yml` + `nginx/`） |
 | Upload to server | `scp` 到服务器 `/tmp` |
-| Sync AI key | 如果配置了 `DASHSCOPE_API_KEY`，写入服务器 `.env`（保留其它配置） |
-| Deploy on server | SSH 执行：解压 → 保留 `.env` → 重建容器 → 健康检查 |
+| Sync AI key | 如果配置了 `DASHSCOPE_API_KEY`，只替换 `.env` 中对应行（先备份 `.env.bak`） |
+| Deploy on server | SSH 执行：校验账号密码 → 拉镜像 / 构建 → 起 MySQL → 滚动替换后端 / Nginx → 健康检查 |
 
 ### 服务器端实际执行内容
 
 ```text
 1. 解压基础设施（docker-compose.yml、nginx/nginx.conf）
-2. 如果 .env 不存在，创建占位文件
-3. 解压后端代码到 backend/（保留数据库卷和 .env）
-4. 清空并解压新 H5 到 frontend/site/
-5. docker compose down --remove-orphans
-6. docker compose build backend
-7. docker compose up -d
-8. 轮询 http://127.0.0.1/api/health 与 http://127.0.0.1/
-9. 清理 /tmp 临时包
+2. 读取/生成 .env，已有 MySQL/JWT 配置绝不覆盖
+   - 已有数据卷但 .env 缺少 MYSQL_* → 中止，避免密码漂移
+   - 已有 MySQL 容器密码与 .env 不一致 → 中止
+3. 解压后端代码到 backend/（不覆盖 .env）
+4. 拉取 MySQL 镜像、构建后端镜像（旧站保持运行）
+5. docker compose up -d --no-recreate mysql，等待 healthy
+6. 用 .env 的应用账号执行 SELECT 1，验证密码与数据卷一致
+7. 清空并解压新 H5 到 frontend/site/
+8. docker compose up -d --no-deps backend（滚动替换）
+9. docker compose restart nginx（重新解析后端地址 + 新静态文件）
+10. 轮询 http://127.0.0.1/api/health 与 http://127.0.0.1/
+11. 清理 /tmp 临时包
 ```
 
 ### 部署后的容器结构
@@ -185,15 +192,15 @@ concurrency:
             ┌──────▼──────┐
             │ tongban-backend │  FastAPI，不对外暴露 8000
             └──────┬──────┘
-                   │
+                   │ 容器内网 :3306
             ┌──────▼──────┐
-            │  tongban-data   │  Docker 卷，保存 SQLite
+            │  tongban-mysql  │  MySQL 8.0，数据卷 tongban-mysql
             └─────────────┘
 ```
 
-- 后端 8000 **不对公网开放**（`docker-compose.yml` 只 `expose`，没有 `ports`）
+- 后端 8000、MySQL 3306 **都不对公网开放**
 - 静态资源由 Nginx 直接返回
-- 数据库在 Docker 卷 `tongban-data` 中，重新部署不丢数据
+- 账号与学习数据在 MySQL Docker 卷 `tongban-mysql` 中，重新部署不丢数据
 
 ---
 
@@ -253,6 +260,10 @@ chmod 600 ~/.ssh/authorized_keys
 ssh -i ~/.ssh/github_actions_tongban <SERVER_USER>@<SERVER_HOST> "docker compose version"
 ```
 
+> **MySQL 不需要手动安装**：`docker-compose.yml` 会启动 MySQL 8.0。首次部署时工作流自动生成 `MYSQL_DATABASE`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`JWT_SECRET` 并写入 `/data/myproject/.env`，之后**不会覆盖**。
+>
+> 请妥善备份 `.env` 和 `tongban-mysql` 数据卷；不要为了“重置密码”删除数据卷，会导致账号数据丢失。
+
 ### 4.4 启用 GitHub Pages
 
 1. 仓库 **Settings → Pages**
@@ -305,7 +316,7 @@ npm run build:h5  # 产物在 dist/build/h5
 
 ```bash
 cd backend
-.venv\Scripts\python.exe test_api.py   # 39 项接口自测（Windows）
+.venv\Scripts\python.exe test_api.py   # 25 项鉴权 / 隔离 / 同步自测（Windows）
 ```
 
 ---
@@ -331,18 +342,23 @@ GitHub Actions 的 **Re-run jobs** 只会重跑同一提交，不会回退代码
 
 ### 6.3 数据说明
 
-- 回滚代码**不会**删除服务器数据库（Docker 卷 `tongban-data`）
-- 前端数据本来就在用户浏览器本地，回滚不影响
-- 如需备份服务器数据库：
+- 回滚代码**不会**删除 MySQL 数据卷 `tongban-mysql`，账号与学习数据仍在
+- 服务器版的学习数据在 MySQL；浏览器只保留缓存，回滚不影响数据库
+- 如需备份数据库：
 
 ```bash
-# 先确认实际卷名（通常带 compose 项目前缀）
-docker volume ls | grep tongban
-
-# 用实际卷名替换下面的 <volume-name>
-docker run --rm -v <volume-name>:/data -v $(pwd):/backup alpine \
-  tar czf /backup/tongban-data.tar.gz -C /data .
+cd /data/myproject
+set -a
+. ./.env
+set +a
+mkdir -p /backup
+docker compose exec -T -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql \
+  mysqldump -uroot --single-transaction --default-character-set=utf8mb4 "$MYSQL_DATABASE" \
+  | gzip > "/backup/tongban-$(date +%F).sql.gz"
+ls -lh /backup
 ```
+
+> 恢复前先停后端，再用 `gunzip -c ... | docker compose exec -T mysql mysql -uroot ...` 导入；操作前务必另存一份当前备份。
 
 ---
 
@@ -365,8 +381,8 @@ docker run --rm -v <volume-name>:/data -v $(pwd):/backup alpine \
 
 | 数据 | 位置 |
 | --- | --- |
-| SQLite 数据库 | Docker 卷 `tongban-data`（实际卷名会带 Compose 项目前缀，如 `myproject_tongban-data`）→ 容器 `/app/data/tongban.db` |
-| 环境变量 / Key | `/data/myproject/.env` |
+| MySQL 数据库 | Docker 卷 `tongban-mysql`（实际卷名带项目前缀，如 `myproject_tongban-mysql`）→ 容器 `/var/lib/mysql` |
+| 环境变量 / Key | `/data/myproject/.env`（MySQL 密码、JWT_SECRET、AI Key） |
 | 前端静态文件 | `/data/myproject/frontend/site`（可随时重建） |
 
 查看状态：
@@ -388,9 +404,16 @@ docker compose logs --tail=50 nginx
 
 ### 8.2 服务器 `.env`
 
-首次部署会自动创建占位内容：
+首次部署会自动生成并写入（之后不会覆盖）：
 
 ```env
+MYSQL_DATABASE=tongban
+MYSQL_USER=tongban
+MYSQL_PASSWORD=<首次部署自动生成的 32 位随机值>
+MYSQL_ROOT_PASSWORD=<首次部署自动生成的 32 位随机值>
+JWT_SECRET=<首次部署自动生成的 64 位随机值>
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+
 DASHSCOPE_API_KEY=
 QWEN_MODEL=qwen-turbo
 ```
@@ -400,11 +423,14 @@ QWEN_MODEL=qwen-turbo
 ```bash
 cd /data/myproject
 sed -i 's/^QWEN_MODEL=.*/QWEN_MODEL=qwen-plus/' .env
-docker compose up -d backend
+docker compose restart backend
 ```
 
 > `DASHSCOPE_API_KEY` 在配置了 GitHub Secret 时由工作流自动同步，手工修改会被下次部署覆盖。
-> 其它变量（如 `QWEN_MODEL`）不会被覆盖。
+>
+> **不要手动修改 MySQL 密码**：MySQL 数据卷只在首次初始化时读取密码；改了 `.env` 但没改数据卷会导致应用无法登录，工作流会检测到并中止部署。确实需要改密码时，先备份数据，再按 MySQL 的 `ALTER USER` 流程同步修改容器与 `.env`。
+>
+> `JWT_SECRET` 修改后所有已登录用户会被要求重新登录，这是正常现象。
 
 ### 8.3 密钥安全
 
@@ -423,7 +449,7 @@ curl -I https://hewei-86.github.io/tongban_project/
 ```
 
 - 200 且资源路径为 `/tongban_project/assets/...`
-- 浏览器打开能正常看到首页
+- 浏览器打开是本地演示模式（游客首页，不强制登录）
 
 ### 9.2 服务器
 
@@ -432,18 +458,24 @@ curl -I https://hewei-86.github.io/tongban_project/
 curl -I http://120.26.177.245/
 
 # 后端（经 Nginx 代理）
-curl http://120.26.177.245/api/health
-# 期望：{"ok":true,"service":"tongban-api",...}
+curl -s http://120.26.177.245/api/health
+# 期望：{"ok":true,"service":"tongban-api","database":"mysql","ai_enabled":...}
 
-# 确认后端端口没有对公网暴露（应当超时/拒绝）
+# 未登录访问数据接口应返回 401
+curl -s -o /dev/null -w '%{http_code}\n' http://120.26.177.245/api/state
+
+# 确认后端 / MySQL 端口没有对公网暴露（应当超时/拒绝）
 curl -m 5 http://120.26.177.245:8000/api/health
-
-# 确认 AI Key 是否生效
-curl -s -X POST http://120.26.177.245/api/ai/chat \
-  -H "Content-Type: application/json" \
-  -d '{"user_id":2,"grade":1,"message":"8+7等于几"}'
-# 期望：ai_enabled:true（未配置时为 false，返回演示回复）
 ```
+
+浏览器验证：
+
+1. 打开 <http://120.26.177.245/> 应自动跳到「登录」页，且没有「先随便看看」；
+2. 注册一个账号 → 完成练习 / 签到 → 刷新页面，数据仍在；
+3. 用同一账号在另一台设备 / 无痕窗口登录，能看到同一份学习数据；
+4. 打开「我的 → 账号数据」，确认显示“已同步到云端”。
+
+> 不要用真实儿童信息或你在其它网站的真实密码做验证。
 
 ### 9.3 版本确认
 
@@ -464,7 +496,11 @@ curl -s -X POST http://120.26.177.245/api/ai/chat \
 | `port is already allocated` | 80 端口被占用 | `ss -ltnp \| grep :80` 找到占用服务并停止，或改用其它端口 |
 | 健康检查失败 `backend API FAILED` | 后端启动异常 | 工作流日志会输出 `docker compose logs --tail=30 backend`；本地 `docker compose logs` 排查 |
 | 网站能开但接口 502 | 后端容器未起来 | `docker compose ps` / `docker compose logs backend` |
-| AI 出题没有调用大模型 | 未配置 `DASHSCOPE_API_KEY`，或 Key 无效 | 检查 Secret、重新部署、查 `/api/ai/chat` 的 `ai_enabled` |
+| 部署日志：`.env 中 MYSQL_* 为空` | `.env` 被误删/改写 | 从 `/data/myproject/.env.bak` 恢复；不要让它自动重新生成，否则会与数据卷密码不一致 |
+| 部署日志：`应用数据库账号无法登录` | `.env` 与数据卷密码不一致 | **不要删除数据卷**；先备份，再用 MySQL `ALTER USER` 统一密码；工作流会中止而不会破坏数据 |
+| `Access denied for user 'tongban'` | 同上，密码漂移 | 查看 `docker inspect tongban-mysql` 的 `MYSQL_PASSWORD` 与 `.env` 是否一致；恢复一致后重启后端 |
+| 后端构建卡在 pip | 服务器访问 PyPI 慢 | 确认 `.env` 有 `PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/`；工作流会自动生成 |
+| AI 出题没有调用大模型 | 未配置 `DASHSCOPE_API_KEY`，或 Key 无效 | 查 `/api/health` 的 `ai_enabled`；检查 Secret 与 `Sync AI key` 日志 |
 | 配置 Key 后仍提示未配置 | 工作流未同步（Secret 为空/部署未跑） | 重跑 `Deploy to Own Server`，查看 `Sync AI key` 步骤日志 |
 | 每次改 README 也会重新部署 | 工作流未设置路径过滤 | 见 [12.2](#122-只在前端或后端变更时部署) |
 | `npm ci` 失败 | `package-lock.json` 与 `package.json` 不一致 | 本地执行 `npm install` 生成新 lockfile 后提交 |
@@ -479,9 +515,10 @@ GitHub → Actions → 选择运行记录 → Jobs → 展开失败步骤
 
 ```bash
 cd /data/myproject
-docker compose down --remove-orphans
+docker compose up -d mysql
 docker compose build backend
-docker compose up -d
+docker compose up -d --no-deps backend
+docker compose restart nginx
 docker compose ps
 curl -s http://127.0.0.1/api/health
 ```
@@ -493,9 +530,9 @@ curl -s http://127.0.0.1/api/health
 1. **使用独立部署密钥**，只授权这台服务器；不要复用个人 SSH 主密钥。
 2. **不要提交** `.env`、数据库、部署私钥（`.gitignore` 已处理，仍建议提交前 `git status` 检查）。
 3. **后端端口不对公网开放**：当前只通过 Nginx 代理 `/api/`，不要加回 `8000:8000` 端口映射。
-4. **尽快启用 HTTPS**：当前服务器站点是 `http://`，浏览器会提示不安全，账号密码也会走较弱的回退哈希；建议域名解析到服务器后配置 Certbot / Caddy。
+4. **尽快启用 HTTPS**：当前服务器站点是 `http://`，登录密码和 JWT 会以明文经过网络；建议域名解析到服务器后配置 Certbot / Caddy。
 5. **最小权限**：能用非 root 用户部署就不要用 root；给部署目录单独授权。
-6. **定期备份** `tongban-data` 卷与 `.env`。
+6. **定期备份** `tongban-mysql` 卷与 `.env`。
 7. **Secret 轮换**：Key 泄露时立即在百炼控制台删除旧 Key，并更新 GitHub Secret。
 
 ---
@@ -556,8 +593,8 @@ on:
 | `.github/workflows/deploy-server.yml` | 云服务器自动部署 |
 | `frontend/package.json` | 前端构建与测试脚本 |
 | `frontend/vite.config.js` | H5 base、开发代理 |
-| `backend/test_api.py` | 后端接口自测 |
-| `docker-compose.yml` | 服务器容器编排（Nginx + FastAPI） |
+| `backend/test_api.py` | 后端鉴权 / 隔离 / 同步自测 |
+| `docker-compose.yml` | 服务器容器编排（MySQL + FastAPI + Nginx） |
 | `nginx/nginx.conf` | 静态托管与 `/api/` 反向代理 |
 | `.env.example` | 环境变量示例 |
 | `README.md` | 项目说明与本地运行 |
@@ -570,7 +607,7 @@ on:
 □ 仓库 Settings → Pages → Source = GitHub Actions
 □ 添加 Secrets：SERVER_HOST / SERVER_USER / SERVER_SSH_KEY
 □ 服务器装 Docker，开放 80，部署公钥加入 authorized_keys
-□ git push origin main
+□ git push origin main（自动生成 MySQL 密码与 JWT_SECRET）
 □ Actions 两条流水线变绿
-□ 访问 Pages 与服务器地址验证
+□ 打开服务器地址注册账号，验证刷新 / 换设备后数据仍在
 ```
