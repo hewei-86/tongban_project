@@ -149,11 +149,15 @@
       </view>
       <view class="about-row">
         <text class="about-key">运行模式</text>
-        <text class="about-value">纯静态 · 本地数据</text>
+        <text class="about-value">{{ isRemote ? '云端账号 · 多端同步' : '纯静态 · 本地数据' }}</text>
       </view>
       <view class="about-row">
         <text class="about-key">技术栈</text>
-        <text class="about-value">uni-app + Vue 3 + 本地数据引擎</text>
+        <text class="about-value">{{ isRemote ? 'uni-app + Vue 3 + FastAPI + MySQL' : 'uni-app + Vue 3 + 本地数据引擎' }}</text>
+      </view>
+      <view class="about-row">
+        <text class="about-key">数据存储</text>
+        <text class="about-value">{{ isRemote ? 'MySQL · JWT 账号隔离' : '浏览器 localStorage' }}</text>
       </view>
       <view class="about-row">
         <text class="about-key">适用年级</text>
@@ -161,11 +165,15 @@
       </view>
 
       <text class="about-text">
-        童伴成长是一个面向小学低年级的 AI 学习与亲子陪伴练习项目。AI 小老师由本地规则驱动，不会把对话发到任何服务器；
+        {{ isRemote
+          ? '童伴成长是一个面向小学低年级的 AI 学习与亲子陪伴产品：学习数据保存在 MySQL，登录同一账号可在不同设备恢复；AI 小老师由本地规则引擎驱动，AI 出题由通义千问生成。'
+          : '童伴成长是一个面向小学低年级的 AI 学习与亲子陪伴练习项目。AI 小老师由本地规则驱动，不会把对话发到任何服务器。' }}
         它的回答可能有误，重要的知识请再和家长、老师确认。
       </text>
       <text class="about-text">
-        本项目用于学习和演示，不替代学校教学，也不收集真实的儿童个人信息。正式上线前还需要完成监护人授权、内容审核、隐私政策与备案等合规工作。
+        {{ isRemote
+          ? '请由家长陪同注册，不要填写真实姓名、住址、电话等隐私信息。产品正式面向儿童上线前，还需要完成监护人授权、内容审核、隐私政策与备案等合规工作。'
+          : '本项目用于学习和演示，不替代学校教学，也不收集真实的儿童个人信息。正式上线前还需要完成监护人授权、内容审核、隐私政策与备案等合规工作。' }}
       </text>
 
       <view class="repo-row" @click="copyRepo">
@@ -193,7 +201,7 @@ import { IS_REMOTE } from '../../config.js'
 
 const isRemote = IS_REMOTE
 
-const version = '2.1.0'
+const version = '3.0.0'
 const repoUrl = 'https://github.com/hewei-86/tongban_project'
 const grades = ['一年级', '二年级', '三年级']
 

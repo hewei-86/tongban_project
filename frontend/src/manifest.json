@@ -2,8 +2,8 @@
   "name": "童伴成长",
   "appid": "__UNI__TONG_BAN",
   "description": "面向小学低年级的 AI 学习与亲子陪伴练习站",
-  "versionName": "2.1.0",
-  "versionCode": "210",
+  "versionName": "3.0.0",
+  "versionCode": "300",
   "transformPx": false,
   "h5": {
     "title": "童伴成长 · AI 学习与亲子陪伴",

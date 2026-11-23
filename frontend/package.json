@@ -1,6 +1,6 @@
 {
   "name": "tongban-frontend",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "description": "童伴成长：小学低年级 AI 学习与亲子陪伴练习站（uni-app + Vue 3）",
