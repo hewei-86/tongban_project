@@ -97,7 +97,7 @@ const code = ref('')
 const redeeming = ref(false)
 
 const freeFeatures = ['每日练习与成长记录', '每天 5 次 AI 出题', '错题本与基础统计']
-const proFeatures = ['每天 100 次 AI 出题', '会员专属周报与复习建议', '错题复习计划', '优先体验新功能']
+const proFeatures = ['每天 100 次 AI 出题', 'AI 出题额度是免费版的 20 倍', '新功能优先体验', '支持童伴持续开发']
 
 async function request(path, options = {}) {
   const headers = { 'Content-Type': 'application/json' }
