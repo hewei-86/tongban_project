@@ -49,3 +49,6 @@ Thumbs.db
 
 # 部署压缩包
 *.zip
+
+# 管理后台构建产物
+admin/dist/

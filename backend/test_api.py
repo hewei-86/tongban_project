@@ -23,6 +23,8 @@ if DB_PATH.exists():
 os.environ["DATABASE_URL"] = f"sqlite:///{DB_PATH.as_posix()}"
 os.environ["JWT_SECRET"] = "test-secret-for-local-only-please-change-1234567890"
 os.environ["DASHSCOPE_API_KEY"] = ""
+os.environ["ADMIN_USERNAME"] = "admin_test"
+os.environ["ADMIN_PASSWORD"] = "admin-pass-123"
 sys.path.insert(0, str(BASE_DIR))
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -113,6 +115,7 @@ def main() -> int:
         )
         bob = r.json()
         bob_token = bob.get("token", "")
+        bob_uid = bob.get("user", {}).get("id")
         check("第二个账号注册", r.status_code == 200 and bob_token, r.text[:160])
         headers_bob = {"Authorization": f"Bearer {bob_token}"}
 
@@ -146,6 +149,79 @@ def main() -> int:
             check("密码不以明文保存", bool(user) and user.password_hash != "secret123" and user.password_hash.startswith("pbkdf2_sha256$"), user.password_hash[:40] if user else "")
         finally:
             db.close()
+
+        # ---------- 会员 / 兑换码 / 后台 ----------
+        r = client.post(
+            "/api/admin/login",
+            json={"username": "admin_test", "password": "admin-pass-123"},
+        )
+        admin_data = r.json()
+        admin_token = admin_data.get("token", "")
+        check("管理员登录", r.status_code == 200 and admin_token, r.text[:160])
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+        r = client.post(
+            "/api/admin/login",
+            json={"username": "admin_test", "password": "wrong"},
+        )
+        check("管理员错误密码被拒绝", r.status_code == 401, r.text[:120])
+
+        r = client.get("/api/admin/dashboard", headers=admin_headers)
+        check("后台概览", r.status_code == 200 and r.json().get("total_users", 0) >= 2, r.text[:160])
+
+        r = client.get("/api/membership/status", headers=headers_alice)
+        check("默认免费套餐", r.status_code == 200 and r.json().get("plan") == "free", r.text[:160])
+
+        r = client.post(
+            "/api/admin/redeem-codes",
+            headers=admin_headers,
+            json={"count": 2, "days": 365, "plan": "pro", "batch": "test"},
+        )
+        code_items = r.json().get("items", [])
+        check("生成兑换码", r.status_code == 200 and len(code_items) == 2, r.text[:200])
+        redeem_code = code_items[0]["code"] if code_items else "TB-XXXX-XXXX"
+
+        r = client.post("/api/membership/redeem", headers=headers_alice, json={"code": redeem_code})
+        check("兑换会员成功", r.status_code == 200 and r.json().get("membership", {}).get("plan") == "pro", r.text[:200])
+
+        r = client.post("/api/membership/redeem", headers=headers_bob, json={"code": redeem_code})
+        check("兑换码不能重复使用", r.status_code == 400, r.text[:160])
+
+        r = client.get("/api/membership/status", headers=headers_alice)
+        check("会员额度为 100", r.status_code == 200 and r.json().get("ai_quota") == 100, r.text[:160])
+
+        r = client.get("/api/admin/users?search=alice", headers=admin_headers)
+        check("后台搜索用户", r.status_code == 200 and any(item["username"] == "alice_01" for item in r.json().get("items", [])), r.text[:160])
+
+        r = client.post(
+            f"/api/admin/users/{bob_uid}/membership",
+            headers=admin_headers,
+            json={"days": 30, "plan": "pro"},
+        )
+        check("后台手动开通会员", r.status_code == 200 and r.json().get("membership", {}).get("is_member"), r.text[:160])
+
+        r = client.post(
+            f"/api/admin/users/{bob_uid}/status",
+            headers=admin_headers,
+            json={"active": False, "reason": "test"},
+        )
+        check("后台停用账号", r.status_code == 200 and r.json().get("user", {}).get("active") is False, r.text[:160])
+
+        r = client.get("/api/auth/me", headers=headers_bob)
+        check("停用账号无法继续访问", r.status_code == 403, r.text[:120])
+
+        r = client.post(
+            f"/api/admin/users/{bob_uid}/status",
+            headers=admin_headers,
+            json={"active": True, "reason": ""},
+        )
+        check("后台恢复账号", r.status_code == 200, r.text[:120])
+
+        r = client.get("/api/admin/audits", headers=admin_headers)
+        check("后台审计日志", r.status_code == 200 and len(r.json().get("items", [])) >= 2, r.text[:120])
+
+        r = client.get("/api/admin/pk/matches", headers=admin_headers)
+        check("后台 PK 对局接口", r.status_code == 200 and "items" in r.json(), r.text[:120])
 
         # ---------- 失败状态码 ----------
         r = client.put("/api/state", headers=headers_alice, json={"base_version": 0, "data": {"x": "y"}})

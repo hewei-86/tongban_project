@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean, Date, UniqueConstraint, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from database import Base
@@ -204,4 +204,68 @@ class ChallengePlay(Base):
     correct: Mapped[int] = mapped_column(Integer, default=0)
     total: Mapped[int] = mapped_column(Integer, default=0)
     seconds: Mapped[int] = mapped_column(Integer, default=60)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class UserStatus(Base):
+    """账号启用 / 停用状态（单独建表，避免改已有 users 表结构）。"""
+
+    __tablename__ = "user_statuses"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    reason: Mapped[str] = mapped_column(String(200), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class Membership(Base):
+    __tablename__ = "memberships"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    plan: Mapped[str] = mapped_column(String(20), default="free")
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="admin")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class RedeemCode(Base):
+    __tablename__ = "redeem_codes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    plan: Mapped[str] = mapped_column(String(20), default="pro")
+    days: Mapped[int] = mapped_column(Integer, default=365)
+    batch: Mapped[str] = mapped_column(String(50), default="")
+    used_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class AiUsage(Base):
+    __tablename__ = "ai_usage"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    usage_date: Mapped[date] = mapped_column(Date, index=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    __table_args__ = (UniqueConstraint("user_id", "usage_date", name="uq_ai_usage_user_day"),)
+
+
+class PkMatch(Base):
+    __tablename__ = "pk_matches"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player1_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    player2_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    player1_score: Mapped[int] = mapped_column(Integer, default=0)
+    player2_score: Mapped[int] = mapped_column(Integer, default=0)
+    winner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    question_count: Mapped[int] = mapped_column(Integer, default=5)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class AdminAudit(Base):
+    __tablename__ = "admin_audits"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    admin_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    action: Mapped[str] = mapped_column(String(100))
+    target: Mapped[str] = mapped_column(String(100), default="")
+    detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

@@ -54,13 +54,22 @@ export async function generatePracticeRemote({ subject = 'math', grade = 1, coun
       signal: controller.signal
     })
     if (response.status === 401) throw new Error('登录已过期，请重新登录')
-    if (!response.ok) throw new Error(`AI 出题接口返回 ${response.status}`)
-    const payload = await response.json()
+    let payload = null
+    try {
+      payload = await response.json()
+    } catch (error) {
+      payload = null
+    }
+    if (!response.ok) {
+      const detail = payload?.detail
+      const message = typeof detail === 'string' ? detail : detail?.message || `AI 出题接口返回 ${response.status}`
+      throw new Error(message)
+    }
     return {
-      questions: Array.isArray(payload.questions) ? payload.questions : [],
-      aiGenerated: Boolean(payload.ai_generated),
-      aiEnabled: Boolean(payload.ai_enabled),
-      demo: payload.demo !== false
+      questions: Array.isArray(payload?.questions) ? payload.questions : [],
+      aiGenerated: Boolean(payload?.ai_generated),
+      aiEnabled: Boolean(payload?.ai_enabled),
+      demo: payload?.demo !== false
     }
   } catch (error) {
     if (error?.name === 'AbortError') throw new Error('AI 出题超时')

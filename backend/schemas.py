@@ -94,3 +94,34 @@ class StateUpdateRequest(BaseModel):
     base_version: int = Field(default=0, ge=0)
     data: dict
 
+
+class RedeemRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=32)
+
+
+class MembershipGrantRequest(BaseModel):
+    days: int = Field(default=365, ge=1, le=3650)
+    plan: str = Field(default="pro", max_length=20)
+
+
+class RedeemCodeCreateRequest(BaseModel):
+    count: int = Field(default=10, ge=1, le=100)
+    days: int = Field(default=365, ge=1, le=3650)
+    plan: str = Field(default="pro", max_length=20)
+    batch: str = Field(default="", max_length=50)
+
+
+class UserStatusRequest(BaseModel):
+    active: bool
+    reason: str = Field(default="", max_length=200)
+
+
+class QuestionInput(BaseModel):
+    subject: str = Field(default="math", max_length=20)
+    grade: int = Field(default=1, ge=1, le=6)
+    content: str = Field(min_length=1, max_length=500)
+    answer: str = Field(min_length=1, max_length=100)
+    explanation: str = Field(default="", max_length=1000)
+    options: list[str] = Field(default_factory=list, max_length=6)
+
+

@@ -54,10 +54,23 @@ jobs:
           VITE_DATA_MODE: remote
         run: npm run build:h5
 
+      - name: Build admin panel
+        working-directory: admin
+        run: |
+          npm ci
+          npm run build
+
+      - name: Merge admin into H5
+        run: |
+          mkdir -p frontend/dist/build/h5/admin
+          cp -R admin/dist/. frontend/dist/build/h5/admin/
+          ls -lh frontend/dist/build/h5/admin | head
+
       - name: Verify H5 build
         run: |
           test -f frontend/dist/build/h5/index.html
-          echo "H5 build OK"
+          test -f frontend/dist/build/h5/admin/index.html
+          echo "H5 + admin build OK"
 
       - name: Setup SSH
         env:
@@ -186,6 +199,8 @@ jobs:
           ensure_env MYSQL_PASSWORD "$(gen_secret 16)"
           ensure_env MYSQL_ROOT_PASSWORD "$(gen_secret 16)"
           ensure_env JWT_SECRET "$(gen_secret 32)"
+          ensure_env ADMIN_USERNAME "admin"
+          ensure_env ADMIN_PASSWORD "$(gen_secret 12)"
           ensure_env PIP_INDEX_URL "https://mirrors.aliyun.com/pypi/simple/"
           chmod 600 .env
 

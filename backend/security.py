@@ -13,7 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User
+from models import User, UserStatus
 
 load_dotenv()
 
@@ -83,4 +83,15 @@ def get_current_user(
     user = db.get(User, user_id)
     if not user:
         raise _unauthorized("账号不存在")
+
+    status = db.get(UserStatus, user.id)
+    if status and not status.is_active:
+        raise HTTPException(status_code=403, detail="账号已被停用，请联系管理员")
+
+    return user
+
+
+def get_admin_user(user: User = Depends(get_current_user)) -> User:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
     return user

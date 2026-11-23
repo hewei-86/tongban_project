@@ -12,6 +12,11 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8000',
         changeOrigin: true
+      },
+      '/ws': {
+        target: process.env.VITE_WS_TARGET || 'ws://127.0.0.1:8000',
+        ws: true,
+        changeOrigin: true
       }
     }
   }

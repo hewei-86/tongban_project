@@ -34,6 +34,8 @@ services:
     environment:
       - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-tongban}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-tongban}?charset=utf8mb4
       - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
       - QWEN_MODEL=${QWEN_MODEL:-qwen-turbo}
       - ALLOW_ORIGINS=${ALLOW_ORIGINS:-*}

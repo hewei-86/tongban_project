@@ -23,10 +23,15 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from database import Base, engine, get_db
-from models import User, UserState
+from database import Base, SessionLocal, engine, get_db
+from models import Question, User, UserState
 from schemas import LoginRequest, PracticeGenerateRequest, RegisterRequest, StateUpdateRequest
 from security import create_access_token, get_current_user, hash_password, verify_password
+from membership import membership_payload, record_ai_use
+from admin_api import router as admin_router
+from membership_api import router as membership_router
+from pk_api import router as pk_router
+from pk_bank import seed_questions
 
 load_dotenv()
 
@@ -46,6 +51,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(admin_router)
+app.include_router(membership_router)
+app.include_router(pk_router)
 
 
 # ==================== 启动 ====================
@@ -68,6 +77,36 @@ def init_db(max_attempts: int = 30) -> None:
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    seed_admin()
+    seed_questions()
+
+
+def seed_admin() -> None:
+    username = os.getenv("ADMIN_USERNAME", "admin").strip().lower()
+    password = os.getenv("ADMIN_PASSWORD", "").strip()
+    if not username or not password:
+        print("[admin] ADMIN_PASSWORD 未配置，跳过管理员初始化")
+        return
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if user is None:
+            user = User(
+                username=username,
+                nickname="管理员",
+                role="admin",
+                password_hash=hash_password(password),
+            )
+            db.add(user)
+            print(f"[admin] created {username}")
+        else:
+            user.role = "admin"
+            if not verify_password(password, user.password_hash):
+                user.password_hash = hash_password(password)
+                print(f"[admin] reset password for {username}")
+        db.commit()
+    finally:
+        db.close()
 
 
 @app.get("/api/health")
@@ -274,7 +313,11 @@ SUBJECT_LABELS = {"math": "数学", "chinese": "语文", "english": "英语"}
 
 
 @app.post("/api/practice/generate")
-def generate_practice(data: PracticeGenerateRequest, user: User = Depends(get_current_user)):
+def generate_practice(
+    data: PracticeGenerateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     subject = SUBJECT_ALIASES.get(data.subject, data.subject)
     if subject not in SUBJECT_LABELS:
         subject = "math"
@@ -289,6 +332,18 @@ def generate_practice(data: PracticeGenerateRequest, user: User = Depends(get_cu
             "ai_enabled": False,
             "ai_generated": False,
         }
+
+    status_payload = membership_payload(db, user.id)
+    if status_payload["ai_used_today"] >= status_payload["ai_quota"]:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": "今日 AI 出题次数已用完",
+                "plan": status_payload["plan"],
+                "quota": status_payload["ai_quota"],
+                "used": status_payload["ai_used_today"],
+            },
+        )
 
     raw = call_qwen(
         [
@@ -309,9 +364,15 @@ def generate_practice(data: PracticeGenerateRequest, user: User = Depends(get_cu
     )
 
     questions = parse_question_array(raw, count) if raw else []
+    if questions:
+        record_ai_use(db, user.id)
+        status_payload = membership_payload(db, user.id)
     return {
         "questions": questions,
         "demo": False,
         "ai_enabled": True,
         "ai_generated": bool(questions),
+        "ai_quota": status_payload["ai_quota"],
+        "ai_used_today": status_payload["ai_used_today"],
+        "ai_left_today": status_payload["ai_left_today"],
     }

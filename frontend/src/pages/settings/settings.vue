@@ -23,7 +23,10 @@
             <text class="account-link" @click="goLogin">登录</text>
             <text class="account-link primary" @click="goRegister">注册</text>
           </template>
-          <text v-else class="account-link danger" @click="doLogout">退出登录</text>
+          <template v-else>
+            <text class="account-link primary" @click="goMember">会员</text>
+            <text class="account-link danger" @click="doLogout">退出登录</text>
+          </template>
         </view>
       </view>
 
@@ -250,6 +253,10 @@ function goLogin() {
 
 function goRegister() {
   uni.navigateTo({ url: '/pages/auth/register/register' })
+}
+
+function goMember() {
+  uni.navigateTo({ url: '/pages/member/member' })
 }
 
 async function doLogout() {

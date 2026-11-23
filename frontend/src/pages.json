@@ -71,6 +71,18 @@
       "style": {
         "navigationBarTitleText": "错题本"
       }
+    },
+    {
+      "path": "pages/member/member",
+      "style": {
+        "navigationBarTitleText": "会员中心"
+      }
+    },
+    {
+      "path": "pages/pk/pk",
+      "style": {
+        "navigationBarTitleText": "真人 PK"
+      }
     }
   ],
   "globalStyle": {

@@ -193,6 +193,14 @@
             <text class="tool-desc">{{ dashboard.wrong_unmastered || 0 }} 道待掌握</text>
           </view>
         </view>
+        <view class="link-row" @click="goPage('/pages/pk/pk')">
+          <view class="link-icon">⚔️</view>
+          <view class="link-main">
+            <text class="link-title">真人 PK</text>
+            <text class="link-desc">和同龄人 1v1 做题，5 题定胜负</text>
+          </view>
+          <text class="link-arrow">›</text>
+        </view>
         <view class="link-row" @click="goPage('/pages/family/family')">
           <view class="link-icon">💗</view>
           <view class="link-main">
@@ -284,6 +292,14 @@
           <view class="link-main">
             <text class="link-title">家长中心</text>
             <text class="link-desc">孩子概况 · 学习目标 · 时长管理 · 周报月报</text>
+          </view>
+          <text class="link-arrow">›</text>
+        </view>
+        <view class="link-row" @click="goPage('/pages/pk/pk')">
+          <view class="link-icon">⚔️</view>
+          <view class="link-main">
+            <text class="link-title">真人 PK</text>
+            <text class="link-desc">和同龄人 1v1 做题，5 题定胜负</text>
           </view>
           <text class="link-arrow">›</text>
         </view>
