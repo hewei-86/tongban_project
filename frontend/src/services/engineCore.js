@@ -226,10 +226,47 @@ export function createEngine(storage, options = {}) {
       if (!raw) return createState(now(), { seedDemo })
       const parsed = JSON.parse(raw)
       if (!parsed || parsed.version !== STATE_VERSION) return createState(now(), { seedDemo })
-      return parsed
+      return normalizeState(parsed)
     } catch (error) {
       return createState(now(), { seedDemo })
     }
+  }
+
+  /**
+   * 云端同步的数据可能来自旧版本或被手工改坏；补齐缺失字段，
+   * 避免登录后因为某个数组不存在而整页报错。
+   */
+  function normalizeState(parsed) {
+    const base = createState(now(), { seedDemo: false })
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return base
+    const state = { ...base, ...parsed }
+    const arrayKeys = [
+      'users',
+      'profiles',
+      'questions',
+      'records',
+      'wrong',
+      'checkins',
+      'rewardedTasks',
+      'userAchievements',
+      'growth',
+      'goals',
+      'timeLimits',
+      'evaluations',
+      'aiChats',
+      'favorites'
+    ]
+    arrayKeys.forEach((key) => {
+      if (!Array.isArray(state[key])) state[key] = base[key]
+    })
+    if (!Array.isArray(state.users) || state.users.length === 0) state.users = base.users
+    if (!Array.isArray(state.profiles) || state.profiles.length === 0) state.profiles = base.profiles
+    if (!state.challenge || typeof state.challenge !== 'object') state.challenge = base.challenge
+    if (!Array.isArray(state.challenge.plays)) state.challenge = { ...base.challenge, ...state.challenge, plays: [] }
+    if (!state.settings || typeof state.settings !== 'object') state.settings = base.settings
+    if (!state.nextId || typeof state.nextId !== 'object') state.nextId = base.nextId
+    else state.nextId = { ...base.nextId, ...state.nextId }
+    return state
   }
 
   function commit() {

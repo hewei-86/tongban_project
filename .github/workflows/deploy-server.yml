@@ -177,22 +177,43 @@ jobs:
           echo ">>> Extracting backend..."
           tar -xzf /tmp/tongban-backend.tar.gz -C backend
 
-          # 3. H5 前端
-          echo ">>> Extracting H5..."
-          find frontend/site -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-          tar -xzf /tmp/tongban-h5.tar.gz -C frontend/site
-
-          # 4. 先拉镜像 / 构建，避免旧站已经停掉才开始下载
+          # 3. 先拉镜像 / 构建，旧站保持运行
           echo ">>> Pulling MySQL image..."
           timeout 300 $DC pull mysql || { echo "❌ MySQL 镜像拉取失败（旧站保持运行）"; exit 1; }
           echo ">>> Building backend image..."
           timeout 600 $DC build backend || { echo "❌ 后端镜像构建失败（旧站保持运行）"; exit 1; }
 
-          # 5. 停止旧容器并启动
-          echo ">>> Stopping old containers..."
-          $DC down --remove-orphans 2>/dev/null || true
-          echo ">>> Starting containers..."
-          $DC up -d
+          # 4. 启动 MySQL 并等待健康（不停止旧站）
+          echo ">>> Starting MySQL..."
+          $DC up -d mysql
+          echo ">>> Waiting for MySQL..."
+          mysql_ready=0
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' tongban-mysql 2>/dev/null || echo missing)
+            if [ "$status" = "healthy" ]; then
+              mysql_ready=1
+              echo "✅ MySQL healthy"
+              break
+            fi
+            echo "  waiting for MySQL... ($i/60) $status"
+            sleep 2
+          done
+          if [ "$mysql_ready" != "1" ]; then
+            echo "❌ MySQL 未就绪，旧站保持运行"
+            $DC logs --tail=50 mysql
+            exit 1
+          fi
+
+          # 5. H5 前端（MySQL 就绪后再替换静态文件）
+          echo ">>> Extracting H5..."
+          find frontend/site -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          tar -xzf /tmp/tongban-h5.tar.gz -C frontend/site
+
+          # 6. 滚动替换后端与 Nginx（不 down 整个栈，MySQL 不重启）
+          echo ">>> Replacing backend..."
+          $DC up -d --no-deps backend
+          echo ">>> Restarting nginx..."
+          $DC restart nginx
 
           echo ""
           echo "=== Container Status ==="
