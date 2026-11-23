@@ -272,14 +272,23 @@ ssh -i ~/.ssh/github_actions_tongban <SERVER_USER>@<SERVER_HOST> "docker compose
 2. **Build and deployment → Source** 选择 **GitHub Actions**
 3. 保存即可（工作流令牌没有创建 Pages 站点的权限，必须由仓库管理员开启）
 
-### 4.5 配置 AI 出题（可选）
+### 4.5 配置 AI 解析 / 讲解 / 出题（可选）
 
 1. 在 [阿里云百炼](https://bailian.console.aliyun.com/) 创建 API Key
 2. 把 Key 加入 GitHub Secret：`DASHSCOPE_API_KEY`
-3. 触发一次部署，工作流会把它写入服务器 `.env` 并重启后端
-4. 打开「练习 → AI 出题」，提示“AI 已生成新题（通义千问）”即生效
+3. 触发一次部署，工作流会把它写入服务器 `.env` 并重建后端
+4. 打开「AI 老师」发一道题，或「练习 → AI 出题」，能看到回答 / 新题即生效
 
-> Pages 站点没有后端，会自动回退本地题库；AI 出题只在服务器站点生效。
+> 如果百炼给的是专属工作空间地址（`ws-xxxx.maas.aliyuncs.com`），在服务器 `.env` 里设置：
+>
+> ```env
+> DASHSCOPE_BASE_URL=https://ws-xxxx.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+> QWEN_MODEL=qwen-flash-2025-07-28
+> ```
+>
+> 模型名必须是该工作空间可用的；可访问 `$DASHSCOPE_BASE_URL/models` 查看。
+>
+> Pages 站点没有后端，会回退本地规则 / 题库；AI 解析、讲解、出题只在服务器站点生效。
 
 ### 4.6 管理后台
 
@@ -335,7 +344,7 @@ npm run build:h5  # 产物在 dist/build/h5
 
 ```bash
 cd backend
-.venv\Scripts\python.exe test_api.py   # 40 项鉴权 / 会员 / PK / 同步自测（Windows）
+.venv\Scripts\python.exe test_api.py   # 45 项鉴权 / 会员 / PK / AI 额度自测（Windows）
 ```
 
 ---
@@ -434,16 +443,25 @@ JWT_SECRET=<首次部署自动生成的 64 位随机值>
 PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
 DASHSCOPE_API_KEY=
-QWEN_MODEL=qwen-turbo
+# 公共 DashScope 可用 qwen-turbo；专属工作空间需填实际模型，例如 qwen-flash-2025-07-28
+QWEN_MODEL=qwen-flash-2025-07-28
+# 专属工作空间地址（没有就留空，使用公共 DashScope）
+DASHSCOPE_BASE_URL=
 ```
 
-修改模型（例如换成 `qwen-plus`）：
+修改模型：
 
 ```bash
 cd /data/myproject
-sed -i 's/^QWEN_MODEL=.*/QWEN_MODEL=qwen-plus/' .env
-docker compose restart backend
+sed -i 's/^QWEN_MODEL=.*/QWEN_MODEL=qwen-flash-2025-07-28/' .env
+docker compose up -d --no-deps --force-recreate backend
 ```
+
+> `restart` 不会重新读取 `.env`，必须 `up -d --force-recreate` 或重新部署。
+>
+> 如果返回 429，是 Key / 工作空间的请求限额用完了；换模型或等额度恢复。
+>
+> 如果返回 404 `Model not exist`，说明工作空间不支持这个模型名，访问 `$DASHSCOPE_BASE_URL/models` 查可用列表。
 
 > `DASHSCOPE_API_KEY` 在配置了 GitHub Secret 时由工作流自动同步，手工修改会被下次部署覆盖。
 >
@@ -519,7 +537,10 @@ curl -m 5 http://120.26.177.245:8000/api/health
 | 部署日志：`应用数据库账号无法登录` | `.env` 与数据卷密码不一致 | **不要删除数据卷**；先备份，再用 MySQL `ALTER USER` 统一密码；工作流会中止而不会破坏数据 |
 | `Access denied for user 'tongban'` | 同上，密码漂移 | 查看 `docker inspect tongban-mysql` 的 `MYSQL_PASSWORD` 与 `.env` 是否一致；恢复一致后重启后端 |
 | 后端构建卡在 pip | 服务器访问 PyPI 慢 | 确认 `.env` 有 `PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/`；工作流会自动生成 |
-| AI 出题没有调用大模型 | 未配置 `DASHSCOPE_API_KEY`，或 Key 无效 | 查 `/api/health` 的 `ai_enabled`；检查 Secret 与 `Sync AI key` 日志 |
+| AI 出题 / 讲解没有回答 | 未配置 Key、Key 无效、模型名不对或额度用完 | 查 `/api/health` 的 `ai_enabled`；`docker compose logs --tail=50 backend` 看 `[qwen] HTTP 429` / `404 Model not exist` |
+| AI 返回 429 | 工作空间请求限额已用完 | 换模型、等额度恢复或在百炼控制台提升配额 |
+| AI 返回 404 Model not exist | 工作空间不支持该 `QWEN_MODEL` | 访问 `$DASHSCOPE_BASE_URL/models` 查可用模型并修改 `.env`，重建 backend |
+| 语音按钮提示需要 HTTPS | 当前是 `http://` 或浏览器不支持 | 配置域名 + HTTPS；用 Chrome / Edge，并允许麦克风权限 |
 | 配置 Key 后仍提示未配置 | 工作流未同步（Secret 为空/部署未跑） | 重跑 `Deploy to Own Server`，查看 `Sync AI key` 步骤日志 |
 | 每次改 README 也会重新部署 | 工作流未设置路径过滤 | 见 [12.2](#122-只在前端或后端变更时部署) |
 | `npm ci` 失败 | `package-lock.json` 与 `package.json` 不一致 | 本地执行 `npm install` 生成新 lockfile 后提交 |
@@ -549,7 +570,7 @@ curl -s http://127.0.0.1/api/health
 1. **使用独立部署密钥**，只授权这台服务器；不要复用个人 SSH 主密钥。
 2. **不要提交** `.env`、数据库、部署私钥（`.gitignore` 已处理，仍建议提交前 `git status` 检查）。
 3. **后端端口不对公网开放**：当前只通过 Nginx 代理 `/api/`，不要加回 `8000:8000` 端口映射。
-4. **尽快启用 HTTPS**：当前服务器站点是 `http://`，登录密码和 JWT 会以明文经过网络；建议域名解析到服务器后配置 Certbot / Caddy。
+4. **尽快启用 HTTPS**：当前服务器站点是 `http://`，登录密码和 JWT 会以明文经过网络；**AI 老师的语音输入也只在 HTTPS 下可用**。建议域名解析到服务器后配置 Certbot / Caddy。
 5. **最小权限**：能用非 root 用户部署就不要用 root；给部署目录单独授权。
 6. **定期备份** `tongban-mysql` 卷与 `.env`。
 7. **Secret 轮换**：Key 泄露时立即在百炼控制台删除旧 Key，并更新 GitHub Secret。
