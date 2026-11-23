@@ -25,7 +25,13 @@ from sqlalchemy.orm import Session
 
 from database import Base, SessionLocal, engine, get_db
 from models import Question, User, UserState
-from schemas import LoginRequest, PracticeGenerateRequest, RegisterRequest, StateUpdateRequest
+from schemas import (
+    AiTutorRequest,
+    LoginRequest,
+    PracticeGenerateRequest,
+    RegisterRequest,
+    StateUpdateRequest,
+)
 from security import create_access_token, get_current_user, hash_password, verify_password
 from membership import membership_payload, record_ai_use
 from admin_api import router as admin_router
@@ -372,6 +378,83 @@ def generate_practice(
         "demo": False,
         "ai_enabled": True,
         "ai_generated": bool(questions),
+        "ai_quota": status_payload["ai_quota"],
+        "ai_used_today": status_payload["ai_used_today"],
+        "ai_left_today": status_payload["ai_left_today"],
+    }
+
+
+# ==================== AI 小老师（云端解析 / 讲解） ====================
+
+@app.post("/api/ai/chat")
+def ai_tutor_chat(
+    data: AiTutorRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not DASHSCOPE_API_KEY:
+        return {
+            "answer": "",
+            "demo": True,
+            "ai_enabled": False,
+            "ai_generated": False,
+        }
+
+    status_payload = membership_payload(db, user.id)
+    if status_payload["ai_used_today"] >= status_payload["ai_quota"]:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": "今日 AI 次数已用完",
+                "feature": "ai",
+                "plan": status_payload["plan"],
+                "quota": status_payload["ai_quota"],
+                "used": status_payload["ai_used_today"],
+            },
+        )
+
+    mode = "explain" if data.mode == "explain" else "chat"
+    if mode == "explain":
+        system_prompt = (
+            f"你是童伴成长的 AI 小老师，面向{data.grade}年级小学生。"
+            "请先复述题意，再一步一步讲解，最后总结答案。用温和、简短的中文，"
+            "多鼓励，不要使用 markdown，不要索要真实姓名、住址、学校、电话等隐私。"
+            "如果问题涉及危险、自伤或让孩子不舒服的内容，先安抚并引导找家长或老师。"
+            "答案控制在 350 字以内。"
+        )
+    else:
+        system_prompt = (
+            f"你是童伴成长的 AI 小老师，面向{data.grade}年级小学生。"
+            "用温和、简短、分步骤的中文回答；数学题给计算过程，语文英语题给关键词和例句。"
+            "不要使用 markdown，不要索要真实姓名、住址、学校、电话等隐私。"
+            "不确定的内容要坦白说不知道，并建议问家长或老师；答案控制在 300 字以内。"
+        )
+
+    raw = call_qwen(
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": data.message},
+        ],
+        max_tokens=900,
+    )
+    if not raw:
+        return {
+            "answer": "",
+            "demo": False,
+            "ai_enabled": True,
+            "ai_generated": False,
+            "ai_quota": status_payload["ai_quota"],
+            "ai_used_today": status_payload["ai_used_today"],
+            "ai_left_today": status_payload["ai_left_today"],
+        }
+
+    record_ai_use(db, user.id)
+    status_payload = membership_payload(db, user.id)
+    return {
+        "answer": raw.strip(),
+        "demo": False,
+        "ai_enabled": True,
+        "ai_generated": True,
         "ai_quota": status_payload["ai_quota"],
         "ai_used_today": status_payload["ai_used_today"],
         "ai_left_today": status_payload["ai_left_today"],

@@ -864,6 +864,30 @@ export function createEngine(storage, options = {}) {
       .map((item) => ({ id: item.id, role: item.role, content: item.content, created_at: formatTime(item.created_at) }))
   }
 
+  /** 云端 AI 已生成回答时，把这一轮对话写入本地历史（不重复调用本地规则引擎） */
+  function recordAiChat({ user_id = CHILD_ID, message = '', answer = '' } = {}) {
+    const text = String(message || '').trim()
+    const reply = String(answer || '').trim()
+    if (!text || !reply) return []
+    state.aiChats.push({
+      id: state.nextId.chat++,
+      user_id,
+      role: 'user',
+      content: text,
+      created_at: now().toISOString()
+    })
+    state.aiChats.push({
+      id: state.nextId.chat++,
+      user_id,
+      role: 'assistant',
+      content: reply,
+      created_at: now().toISOString()
+    })
+    const newly = unlockAchievements(user_id)
+    commit()
+    return newly
+  }
+
   function clearChatHistory(userId = CHILD_ID) {
     state.aiChats = state.aiChats.filter((item) => item.user_id !== userId)
     commit()
@@ -1386,6 +1410,7 @@ export function createEngine(storage, options = {}) {
     importQuestions,
     // AI
     chatWithAi,
+    recordAiChat,
     getChatHistory,
     clearChatHistory,
     // 家长

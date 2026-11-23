@@ -125,3 +125,9 @@ class QuestionInput(BaseModel):
     options: list[str] = Field(default_factory=list, max_length=6)
 
 
+class AiTutorRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=800)
+    grade: int = Field(default=1, ge=1, le=6)
+    mode: str = Field(default="chat", max_length=20)
+
+

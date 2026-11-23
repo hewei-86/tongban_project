@@ -10,8 +10,10 @@ AI 出题开关、密码不明文存储。
     python test_api.py                        # macOS / Linux
 """
 
+import json
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -30,8 +32,9 @@ sys.path.insert(0, str(BASE_DIR))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from database import SessionLocal  # noqa: E402
+import main as app_main  # noqa: E402
 from main import app, engine  # noqa: E402
-from models import User  # noqa: E402
+from models import AiUsage, User  # noqa: E402
 
 passed = 0
 failed = 0
@@ -222,6 +225,55 @@ def main() -> int:
 
         r = client.get("/api/admin/pk/matches", headers=admin_headers)
         check("后台 PK 对局接口", r.status_code == 200 and "items" in r.json(), r.text[:120])
+
+        # ---------- AI 解析 / 讲解额度 ----------
+        r = client.post("/api/ai/chat", json={"message": "8 + 7 等于几", "grade": 1})
+        check("AI 讲解需要登录", r.status_code == 401, r.text[:120])
+
+        old_key = app_main.DASHSCOPE_API_KEY
+        old_call = app_main.call_qwen
+        try:
+            app_main.DASHSCOPE_API_KEY = "test-key"
+            def fake_qwen(messages, **kwargs):
+                if "只返回严格 JSON 数组" in messages[0]["content"]:
+                    return json.dumps(
+                        [
+                            {"content": "1 + 1 = ?", "answer": "2", "explanation": "1+1=2", "options": ["1", "2", "3", "4"]},
+                            {"content": "2 + 2 = ?", "answer": "4", "explanation": "2+2=4", "options": ["2", "3", "4", "5"]},
+                        ],
+                        ensure_ascii=False,
+                    )
+                return "8 加 7 等于 15。"
+            app_main.call_qwen = fake_qwen
+            r = client.post("/api/ai/chat", headers=headers_alice, json={"message": "8 + 7 等于几", "grade": 1})
+            payload = r.json()
+            check("AI 讲解成功", r.status_code == 200 and "15" in payload.get("answer", ""), r.text[:160])
+            check("AI 讲解返回额度", payload.get("ai_quota") == 100 and payload.get("ai_used_today", 0) >= 1, str(payload)[:160])
+
+            r = client.post(
+                "/api/practice/generate",
+                headers=headers_alice,
+                json={"user_id": 1, "subject": "math", "grade": 1, "count": 2},
+            )
+            check("AI 出题与讲解共用额度", r.status_code == 200 and r.json().get("ai_used_today", 0) >= 2, r.text[:160])
+
+            db = SessionLocal()
+            try:
+                usage = db.query(AiUsage).filter(AiUsage.user_id == alice_uid, AiUsage.usage_date == date.today()).first()
+                if usage:
+                    usage.count = 100
+                else:
+                    db.add(AiUsage(user_id=alice_uid, usage_date=date.today(), count=100))
+                db.commit()
+            finally:
+                db.close()
+
+            r = client.post("/api/ai/chat", headers=headers_alice, json={"message": "再讲一题", "grade": 1})
+            detail = r.json().get("detail", {})
+            check("AI 次数用完返回 429", r.status_code == 429 and isinstance(detail, dict) and detail.get("quota") == 100, r.text[:200])
+        finally:
+            app_main.DASHSCOPE_API_KEY = old_key
+            app_main.call_qwen = old_call
 
         # ---------- 失败状态码 ----------
         r = client.put("/api/state", headers=headers_alice, json={"base_version": 0, "data": {"x": "y"}})
