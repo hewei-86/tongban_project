@@ -31,7 +31,7 @@ function stopSyncLoop() {
 
 function startSyncLoop() {
   stopSyncLoop()
-  if (!IS_REMOTE || !isLoggedIn()) return
+  if (!IS_REMOTE) return
   // 另一台设备修改数据后，最多 30 秒内同步到当前页面
   syncTimer = setInterval(() => {
     pullIfNewer()
@@ -51,26 +51,26 @@ export default {
       return
     }
     console.log('童伴成长已启动 · 云端数据模式')
-    if (!isLoggedIn()) {
-      uni.reLaunch({ url: '/pages/auth/login/login' })
-      return
-    }
-    // 账号在其他设备被更新时，拉取最新数据并刷新当前页
+    // 登录 / 注册后也会复用这个处理器
     setConflictHandler((detail) => {
       if (detail && detail.data) applyRemoteState(detail.data)
     })
+    startSyncLoop()
+    if (!isLoggedIn()) {
+      uni.reLaunch({ url: '/pages/auth/login/login' })
+    }
   },
   onShow() {
-    if (!IS_REMOTE || !isLoggedIn()) return
-    const account = getCurrentAccount()
-    if (!account) return
-    pullIfNewer()
-      .then((result) => {
-        if (result.changed) applyRemoteState(result.data)
-      })
-      .catch((error) => {
-        if (error && error.status !== 401) console.warn('[sync] 拉取失败：', error.message)
-      })
+    if (!IS_REMOTE) return
+    if (getCurrentAccount()) {
+      pullIfNewer()
+        .then((result) => {
+          if (result.changed) applyRemoteState(result.data)
+        })
+        .catch((error) => {
+          if (error && error.status !== 401) console.warn('[sync] 拉取失败：', error.message)
+        })
+    }
     startSyncLoop()
   },
   onHide() {
