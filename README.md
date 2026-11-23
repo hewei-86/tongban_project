@@ -59,8 +59,11 @@
 | 🏆 我的成长 | 等级与经验、连续签到、28 天学习热力图、14 天学习曲线、14 个成就徽章、家庭成长榜、本周小结 |
 | 💗 亲子互评 | 默契度、5 星评价、鼓励留言、互评记录 |
 | 👨‍👩‍👧 家长中心 | 孩子概况、周报 / 月报、学科正确率、每日学习曲线、自动生成的小建议、学习目标、每日时长管理 |
+| 🌟 会员中心 | 家庭会员、权益说明、兑换码开通、今日 AI 额度 |
+| ⚔️ 真人 PK | 1v1 随机匹配、5 题、服务端计时判分、速度加分、结算 |
+| 🛠️ 管理后台 | 独立 `/admin/`：数据概览、用户/停用、手动开通会员、兑换码、题库、PK 对局、审计 |
 | 🔐 登录 / 注册 | 服务器版：云端账号 + JWT + MySQL 多端同步；Pages 演示版：本机账号 / 游客 |
-| 🙋 我的 | 账号信息、角色切换、年级切换、数据导出 / 导入 / 重置、隐私与项目说明 |
+| 🙋 我的 | 账号信息、会员入口、角色切换、年级切换、数据导出 / 导入 / 重置、隐私与项目说明 |
 
 设计上的几个小坚持：
 
@@ -187,7 +190,7 @@ echo "value=/" >> "$GITHUB_OUTPUT"
 tongban_project/
 ├─ frontend/                        # uni-app（Vue 3）前端
 │  ├─ src/
-│  │  ├─ pages/                     # 12 个页面
+│  │  ├─ pages/                     # 14 个页面（含会员中心、真人 PK）
 │  │  │  ├─ index/                  # 首页
 │  │  │  ├─ practice/               # 学科练习
 │  │  │  ├─ challenge/              # 速算挑战
@@ -217,10 +220,15 @@ tongban_project/
 │  └─ vite.config.js
 ├─ backend/                         # 产品版 FastAPI 后端
 │  ├─ main.py / models.py / schemas.py / database.py / security.py
-│  ├─ test_api.py                   # 25 项鉴权 / 隔离 / 同步自测
+│  ├─ membership.py / admin_api.py / membership_api.py
+│  ├─ pk_api.py / pk_bank.py         # 真人 PK WebSocket 与服务端题库
+│  ├─ test_api.py                   # 40 项鉴权 / 会员 / PK / 同步自测
 │  ├─ requirements.txt / Dockerfile
 │  └─ .env                           # 本地配置（不提交）
-├─ nginx/nginx.conf                 # 服务器部署用
+├─ admin/                            # 独立管理后台（Vue 3 + Vite，部署到 /admin/）
+│  ├─ src/App.vue / styles.css
+│  └─ package.json / vite.config.js
+├─ nginx/nginx.conf                 # 服务器部署用（/api、/ws 反代）
 ├─ docker-compose.yml               # MySQL + 后端 + Nginx
 ├─ docs/                            # README 预览图
 ├─ DEPLOY.md                        # 自动部署完整流程（Pages + 云服务器 + 回滚 + 排错）
@@ -256,12 +264,21 @@ tongban_project/
 | `GET /api/auth/me` | 当前账号 |
 | `GET /api/state` | 拉取当前账号的学习数据快照 |
 | `PUT /api/state` | 上传数据（`base_version` 版本检测，冲突返回 409） |
-| `POST /api/practice/generate` | 通义千问生成练习题（需登录） |
+| `POST /api/practice/generate` | 通义千问生成练习题（需登录，按会员额度限制） |
+| `GET /api/membership/status` | 会员状态、到期时间、今日 AI 额度 |
+| `POST /api/membership/redeem` | 兑换码开通会员 |
+| `POST /api/admin/login` | 管理员登录 |
+| `GET /api/admin/dashboard` | 后台概览 |
+| `GET /api/admin/users` | 用户列表 / 搜索 / 停用 / 手动开通会员 |
+| `POST /api/admin/redeem-codes` | 生成会员兑换码 |
+| `GET /api/admin/questions` | 题库管理（PK 使用） |
+| `GET /api/admin/pk/matches` | PK 对局记录 |
+| `WS /ws/pk` | 1v1 真人 PK（token 鉴权、服务端判分） |
 | `GET /api/health` | 健康检查 |
 
 - 鉴权：`Authorization: Bearer <JWT>`；所有数据接口都只操作 token 对应账号
-- 存储：MySQL 8（本地开发可退回 SQLite），账号表 `users` + 快照表 `user_states`
-- 当前快照是账号级 JSON；后续可拆成 `learning_records`、`wrong_questions` 等关系表，便于统计与运营
+- 存储：MySQL 8（本地开发可退回 SQLite），账号表 `users` + 快照表 `user_states` + 会员/兑换码/题库/PK 表
+- 当前学习数据仍是账号级 JSON 快照；后台统计与 PK 使用新增的关系表
 
 ### 本地启动
 
@@ -301,7 +318,7 @@ cd backend
 python test_api.py                        # macOS / Linux
 ```
 
-脚本使用临时数据库，不会污染 `tongban.db`；当前覆盖 **25 项**检查（注册、登录、JWT、账号隔离、版本冲突、AI 降级、密码不明文）。
+脚本使用临时数据库，不会污染 `tongban.db`；当前覆盖 **40 项**检查（注册、登录、JWT、账号隔离、版本冲突、会员兑换码、停用账号、PK 接口、AI 降级、密码不明文）。
 
 ### 用 Docker 部署（MySQL + 后端 + Nginx）
 
@@ -330,6 +347,23 @@ docker compose up -d --build
 需要域名 + HTTPS 时，可以用 Certbot 在宿主机签发证书，再把 443 反代到 80；或使用 Caddy。上线前请把 `.env` 和 MySQL 卷纳入备份。
 
 完整步骤（Secrets、SSH、MySQL 密码、滚动部署、回滚、排错）见 **[DEPLOY.md](DEPLOY.md)**。
+
+### 管理后台与会员
+
+- 后台地址：`http://<服务器>/admin/`
+- 账号由服务器 `.env` 的 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 初始化，首次部署自动生成：
+
+```bash
+ssh root@<服务器>
+cd /data/myproject
+grep '^ADMIN_USERNAME=' .env
+grep '^ADMIN_PASSWORD=' .env
+```
+
+- 后台能力：数据概览、用户搜索/停用、手动开通会员、生成兑换码、题库管理、PK 对局记录
+- 会员：免费版每天 5 次 AI 出题；家庭会员 99 元/年，每天 100 次；当前用兑换码开通（未接在线支付）
+- 家长端「我的 → 会员」输入兑换码即可开通
+- 真人 PK：`WS /ws/pk`，1v1 随机匹配 5 题，服务端计时判分；Nginx 已配置 WebSocket 升级
 
 ---
 
@@ -361,7 +395,7 @@ npm test
 ```bash
 cd backend
 .venv\Scripts\python.exe test_api.py
-# 25 项全部通过
+# 40 项全部通过
 ```
 
 ---

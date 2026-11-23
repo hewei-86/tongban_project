@@ -155,7 +155,8 @@ concurrency:
 | Checkout / Node / npm ci | 与 Pages 一致 |
 | Run unit tests | 发布前跑 27 项单测 |
 | Build H5 | `UNI_H5_BASE=/` + `VITE_DATA_MODE=remote`（强制登录、连接 MySQL） |
-| Verify H5 build | 检查 `index.html` 是否存在 |
+| Build admin | `admin/` 独立 Vite 构建，产物合并到 H5 的 `/admin/` |
+| Verify H5 build | 检查 `index.html` 与 `admin/index.html` 是否存在 |
 | Setup SSH | 写入私钥、`ssh-keyscan` 记录主机指纹 |
 | Package artifacts | 打三个包：`backend.tar.gz`、`h5.tar.gz`、`infra.tar.gz`（`docker-compose.yml` + `nginx/`） |
 | Upload to server | `scp` 到服务器 `/tmp` |
@@ -166,14 +167,15 @@ concurrency:
 
 ```text
 1. 解压基础设施（docker-compose.yml、nginx/nginx.conf）
-2. 读取/生成 .env，已有 MySQL/JWT 配置绝不覆盖
+2. 读取/生成 .env，已有 MySQL/JWT/管理员配置绝不覆盖
    - 已有数据卷但 .env 缺少 MYSQL_* → 中止，避免密码漂移
    - 已有 MySQL 容器密码与 .env 不一致 → 中止
+   - 首次生成 ADMIN_PASSWORD，后端启动时创建管理员
 3. 解压后端代码到 backend/（不覆盖 .env）
 4. 拉取 MySQL 镜像、构建后端镜像（旧站保持运行）
 5. docker compose up -d --no-recreate mysql，等待 healthy
 6. 用 .env 的应用账号执行 SELECT 1，验证密码与数据卷一致
-7. 清空并解压新 H5 到 frontend/site/
+7. 清空并解压新 H5（含 `/admin/` 后台）到 frontend/site/
 8. docker compose up -d --no-deps backend（滚动替换）
 9. docker compose restart nginx（重新解析后端地址 + 新静态文件）
 10. 轮询 http://127.0.0.1/api/health 与 http://127.0.0.1/
@@ -279,6 +281,23 @@ ssh -i ~/.ssh/github_actions_tongban <SERVER_USER>@<SERVER_HOST> "docker compose
 
 > Pages 站点没有后端，会自动回退本地题库；AI 出题只在服务器站点生效。
 
+### 4.6 管理后台
+
+- 地址：`http://<服务器>/admin/`
+- 首次部署自动生成 `ADMIN_USERNAME` / `ADMIN_PASSWORD`，写入服务器 `.env`
+- 查看账号（不要把密码发到公开群）：
+
+```bash
+cd /data/myproject
+grep '^ADMIN_USERNAME=' .env
+grep '^ADMIN_PASSWORD=' .env
+```
+
+- 后台可以：看概览、搜索/停用用户、手动开通会员、生成兑换码、管理题库、查看 PK 对局
+- Nginx 已配置 `/ws/` 的 WebSocket 升级，用于真人 PK
+
+> 修改 `ADMIN_PASSWORD` 后重启 backend 会同步更新管理员密码；请先备份 `.env`。
+
 ---
 
 ## 五、日常发布
@@ -316,7 +335,7 @@ npm run build:h5  # 产物在 dist/build/h5
 
 ```bash
 cd backend
-.venv\Scripts\python.exe test_api.py   # 25 项鉴权 / 隔离 / 同步自测（Windows）
+.venv\Scripts\python.exe test_api.py   # 40 项鉴权 / 会员 / PK / 同步自测（Windows）
 ```
 
 ---
@@ -593,7 +612,8 @@ on:
 | `.github/workflows/deploy-server.yml` | 云服务器自动部署 |
 | `frontend/package.json` | 前端构建与测试脚本 |
 | `frontend/vite.config.js` | H5 base、开发代理 |
-| `backend/test_api.py` | 后端鉴权 / 隔离 / 同步自测 |
+| `backend/test_api.py` | 后端鉴权 / 会员 / PK 自测 |
+| `admin/` | 独立管理后台（Vue 3 + Vite） |
 | `docker-compose.yml` | 服务器容器编排（MySQL + FastAPI + Nginx） |
 | `nginx/nginx.conf` | 静态托管与 `/api/` 反向代理 |
 | `.env.example` | 环境变量示例 |
