@@ -4,9 +4,11 @@
       <view>
         <text class="page-head-sub">{{ pageSubtitle }}</text>
       </view>
-      <view class="page-head-actions">
+        <view class="page-head-actions">
         <view class="btn btn-soft btn-sm" @click="goCurriculum">📚 教材同步</view>
-        <view v-if="!unit" class="btn btn-soft btn-sm" :class="{ disabled: loading }" @click="onAiClick">🤖 AI 出题</view>
+        <view class="btn btn-soft btn-sm" :class="{ disabled: loading }" @click="onAiClick">
+          {{ unit ? '✨ 本单元 AI 出题' : '🤖 AI 出题' }}
+        </view>
       </view>
     </view>
 
@@ -168,6 +170,7 @@ import { api, toast } from '../../services/api.js'
 import { session, switchGrade } from '../../services/session.js'
 import { CHILD_ID } from '../../services/engineCore.js'
 import { generatePracticeRemote, isRemoteAiEnabled } from '../../services/remoteAi.js'
+import { generateUnitQuestions } from '../../services/curriculumRemote.js'
 
 const subjects = [
   { key: 'math', label: '数学', icon: '➗' },
@@ -246,6 +249,18 @@ function resetPerQuestion() {
 }
 
 async function fetchAiPractice() {
+  if (unit.value) {
+    if (!curriculum.value) throw new Error('请从教材同步页进入单元')
+    if (!isRemoteAiEnabled()) throw new Error('本单元 AI 出题需要服务器版')
+    const remote = await generateUnitQuestions(curriculum.value, unit.value, 5)
+    const imported = remote.questions?.length ? api.importQuestions(remote.questions) : []
+    if (!imported.length) throw new Error(remote.note || 'AI 暂时没有生成有效题目，请重试')
+    return {
+      questions: imported,
+      note: 'AI 已按本单元生成新题（消耗 1 次 AI 额度）'
+    }
+  }
+
   let remoteFailed = false
   if (isRemoteAiEnabled()) {
     try {
@@ -286,9 +301,24 @@ async function loadQuestions(generated = false) {
   loadingText.value = generated ? 'AI 正在出题…' : '题目准备中…'
   stopTimer()
   try {
-    const payload = generated
-      ? await fetchAiPractice()
-      : { questions: api.getQuestions({ subject: subject.value, grade: grade.value, limit: 5, unit: unit.value || undefined }) }
+    let payload
+    if (generated) {
+      payload = await fetchAiPractice()
+    } else {
+      payload = {
+        questions: api.getQuestions({
+          subject: subject.value,
+          grade: grade.value,
+          limit: 5,
+          unit: unit.value || undefined
+        })
+      }
+      // 语文/英语单元暂时没有固定题，进入时由 AI 按单元生成
+      if (unit.value && !payload.questions.length) {
+        loadingText.value = 'AI 正在按本单元出题…'
+        payload = await fetchAiPractice()
+      }
+    }
     if (seq !== requestSeq) return
 
     questions.value = payload.questions || []
@@ -300,19 +330,31 @@ async function loadQuestions(generated = false) {
     resetPerQuestion()
 
     if (!questions.value.length) {
-      toast('暂时没有这个年级的题目，换个年级试试')
-    } else if (generated) {
+      toast('暂时没有这个单元的题目，请稍后重试')
+    } else if (generated || (unit.value && payload.note)) {
       toast(payload.note || '已生成新题目')
     }
   } catch (error) {
-    if (seq === requestSeq) toast(error?.message || '题目加载失败')
+    if (seq !== requestSeq) return
+    if (error?.status === 429) {
+      uni.showModal({
+        title: '今日 AI 次数已用完',
+        content: '免费版每天 5 次，会员每天 100 次。开通会员可以继续按单元出题。',
+        confirmText: '去会员',
+        success: (res) => {
+          if (res.confirm) uni.navigateTo({ url: '/pages/member/member' })
+        }
+      })
+    } else {
+      toast(error?.message || '题目加载失败')
+    }
   } finally {
     if (seq === requestSeq) loading.value = false
   }
 }
 
 function onAiClick() {
-  if (loading.value || unit.value) return
+  if (loading.value) return
   loadQuestions(true)
 }
 

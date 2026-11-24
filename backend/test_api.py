@@ -172,6 +172,49 @@ def main() -> int:
         r = client.get("/api/admin/dashboard", headers=admin_headers)
         check("后台概览", r.status_code == 200 and r.json().get("total_users", 0) >= 2, r.text[:160])
 
+        # ---------- 教材同步：三科、每天 1 本、第一单元免费 ----------
+        r = client.get("/api/curriculum/books", headers=headers_bob)
+        books = r.json().get("books", []) if r.status_code == 200 else []
+        subjects = {book.get("subject") for book in books}
+        check("教材同步返回三科", r.status_code == 200 and {"math", "chinese", "english"} <= subjects, r.text[:200])
+        math_book = next((book for book in books if book.get("subject") == "math"), {})
+        check("第一单元免费、第二单元锁定", math_book.get("units", [{}])[0].get("locked") is False and math_book.get("units", [{}, {}])[1].get("locked") is True, str(math_book)[:200])
+
+        r = client.post("/api/curriculum/books/pep-math-3-1/activate", headers=headers_bob)
+        check("激活当天教材", r.status_code == 200, r.text[:160])
+        r = client.post("/api/curriculum/books/pep-chinese-3-1/activate", headers=headers_bob)
+        check("免费每天只能激活一本", r.status_code == 403, r.text[:160])
+
+        old_key = app_main.DASHSCOPE_API_KEY
+        old_call = app_main.call_qwen
+        try:
+            app_main.DASHSCOPE_API_KEY = "test-key"
+            app_main.call_qwen = lambda *args, **kwargs: json.dumps(
+                [
+                    {"content": "1 时等于多少分？", "answer": "60", "explanation": "1 时=60 分", "options": ["30", "60", "100", "120"]},
+                    {"content": "2 分等于多少秒？", "answer": "120", "explanation": "1 分=60 秒", "options": ["60", "100", "120", "200"]},
+                    {"content": "半小时等于多少分？", "answer": "30", "explanation": "60÷2=30", "options": ["15", "30", "45", "60"]},
+                    {"content": "3 时等于多少分？", "answer": "180", "explanation": "60×3=180", "options": ["120", "150", "180", "240"]},
+                    {"content": "1 分等于多少秒？", "answer": "60", "explanation": "1 分=60 秒", "options": ["30", "60", "100", "120"]},
+                ],
+                ensure_ascii=False,
+            )
+            r = client.post(
+                "/api/curriculum/books/pep-math-3-1/units/u1/generate",
+                headers=headers_bob,
+                json={"count": 5},
+            )
+            check("按单元 AI 出题", r.status_code == 200 and len(r.json().get("questions", [])) == 5, r.text[:200])
+            r = client.post(
+                "/api/curriculum/books/pep-math-3-1/units/u2/generate",
+                headers=headers_bob,
+                json={"count": 5},
+            )
+            check("第二单元需要会员", r.status_code == 403, r.text[:160])
+        finally:
+            app_main.DASHSCOPE_API_KEY = old_key
+            app_main.call_qwen = old_call
+
         r = client.get("/api/membership/status", headers=headers_alice)
         check("默认免费套餐", r.status_code == 200 and r.json().get("plan") == "free", r.text[:160])
 

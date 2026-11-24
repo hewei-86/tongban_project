@@ -269,3 +269,13 @@ class AdminAudit(Base):
     target: Mapped[str] = mapped_column(String(100), default="")
     detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class CurriculumAccess(Base):
+    __tablename__ = "curriculum_access"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    book_id: Mapped[str] = mapped_column(String(50), index=True)
+    access_date: Mapped[date] = mapped_column(Date, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    __table_args__ = (UniqueConstraint("user_id", "book_id", "access_date", name="uq_curriculum_access_day"),)

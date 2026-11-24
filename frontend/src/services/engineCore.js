@@ -868,6 +868,9 @@ export function createEngine(storage, options = {}) {
         explanation: String(item.explanation || '').slice(0, 1000),
         options: Array.isArray(item.options) ? item.options.map((option) => String(option)).slice(0, 6) : [],
         accept: [],
+        unit: item.unit || null,
+        unit_title: item.unit_title || null,
+        curriculum: item.curriculum || null,
         source: 'ai',
         created_at: now().toISOString()
       }

@@ -138,3 +138,7 @@ class AiTutorRequest(BaseModel):
     memory: str = Field(default="", max_length=1200)
 
 
+class UnitGenerateRequest(BaseModel):
+    count: int = Field(default=5, ge=1, le=10)
+
+

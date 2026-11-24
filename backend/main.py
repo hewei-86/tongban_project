@@ -12,7 +12,7 @@ import json
 import os
 import re
 import time
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import httpx
@@ -24,14 +24,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import Base, SessionLocal, engine, get_db
-from models import Question, User, UserState
+from models import CurriculumAccess, Question, User, UserState
 from schemas import (
     AiTutorRequest,
     LoginRequest,
     PracticeGenerateRequest,
     RegisterRequest,
     StateUpdateRequest,
+    UnitGenerateRequest,
 )
+from curriculum import BOOKS, get_book, get_unit
 from security import create_access_token, get_current_user, hash_password, verify_password
 from membership import membership_payload, record_ai_use
 from admin_api import router as admin_router
@@ -374,6 +376,9 @@ def generate_practice(
     )
 
     questions = parse_question_array(raw, count) if raw else []
+    for question in questions:
+        question["subject"] = subject
+        question["grade"] = grade
     if questions:
         record_ai_use(db, user.id)
         status_payload = membership_payload(db, user.id)
@@ -472,6 +477,194 @@ def ai_tutor_chat(
         "demo": False,
         "ai_enabled": True,
         "ai_generated": True,
+        "ai_quota": status_payload["ai_quota"],
+        "ai_used_today": status_payload["ai_used_today"],
+        "ai_left_today": status_payload["ai_left_today"],
+    }
+
+
+# ==================== 教材同步（人教版三上） ====================
+
+def _curriculum_active_today(db: Session, user_id: int):
+    return (
+        db.query(CurriculumAccess)
+        .filter(CurriculumAccess.user_id == user_id, CurriculumAccess.access_date == date.today())
+        .all()
+    )
+
+
+@app.get("/api/curriculum/books")
+def list_curriculum_books(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    status_payload = membership_payload(db, user.id)
+    member = bool(status_payload["is_member"])
+    rows = _curriculum_active_today(db, user.id)
+    active_ids = {row.book_id for row in rows}
+    today_book_id = rows[0].book_id if rows else ""
+
+    books = []
+    for book in BOOKS:
+        locked_by_day = bool(rows) and not member and book["id"] not in active_ids
+        units = []
+        for unit in book["units"]:
+            units.append(
+                {
+                    **unit,
+                    "free": unit["no"] == 1,
+                    "locked": (not member and unit["no"] > 1) or locked_by_day,
+                }
+            )
+        books.append(
+            {
+                **{key: value for key, value in book.items() if key != "units"},
+                "units": units,
+                "active_today": book["id"] in active_ids,
+                "locked_by_day": locked_by_day,
+            }
+        )
+
+    return {
+        "books": books,
+        "member": member,
+        "today_book_id": today_book_id,
+        "daily_free_books": 1,
+        "rule": "免费每天 1 本教材，每本第 1 单元免费；第 2 单元起需会员",
+    }
+
+
+@app.post("/api/curriculum/books/{book_id}/activate")
+def activate_curriculum_book(
+    book_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    book = get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="教材不存在")
+
+    status_payload = membership_payload(db, user.id)
+    if status_payload["is_member"]:
+        return {"ok": True, "book_id": book_id, "member": True}
+
+    rows = _curriculum_active_today(db, user.id)
+    if any(row.book_id == book_id for row in rows):
+        return {"ok": True, "book_id": book_id, "member": False}
+    if rows:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "免费每天只能学 1 本教材，明天再来或开通会员",
+                "code": "curriculum_daily_limit",
+            },
+        )
+
+    try:
+        db.add(CurriculumAccess(user_id=user.id, book_id=book_id, access_date=date.today()))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        rows = _curriculum_active_today(db, user.id)
+        if not any(row.book_id == book_id for row in rows):
+            raise HTTPException(status_code=403, detail="免费每天只能学 1 本教材")
+    return {"ok": True, "book_id": book_id, "member": False}
+
+
+@app.post("/api/curriculum/books/{book_id}/units/{unit_id}/generate")
+def generate_curriculum_unit(
+    book_id: str,
+    unit_id: str,
+    data: UnitGenerateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    book, unit = get_unit(book_id, unit_id)
+    if not book or not unit:
+        raise HTTPException(status_code=404, detail="教材单元不存在")
+
+    status_payload = membership_payload(db, user.id)
+    member = bool(status_payload["is_member"])
+    if not member:
+        if unit["no"] > 1:
+            raise HTTPException(
+                status_code=403,
+                detail={"message": "第 2 单元起需要开通会员", "code": "curriculum_member_required"},
+            )
+        rows = _curriculum_active_today(db, user.id)
+        if not any(row.book_id == book_id for row in rows):
+            raise HTTPException(
+                status_code=403,
+                detail={"message": "请先选择这本教材", "code": "curriculum_not_activated"},
+            )
+
+    if not DASHSCOPE_API_KEY:
+        return {
+            "questions": [],
+            "ai_enabled": False,
+            "ai_generated": False,
+            "book_id": book_id,
+            "unit_id": unit_id,
+            "note": "AI 未配置，暂时无法按单元出题",
+        }
+
+    if status_payload["ai_used_today"] >= status_payload["ai_quota"]:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": "今日 AI 次数已用完",
+                "feature": "ai",
+                "plan": status_payload["plan"],
+                "quota": status_payload["ai_quota"],
+                "used": status_payload["ai_used_today"],
+            },
+        )
+
+    subject_name = book["subject_name"]
+    knowledge = "、".join(unit["knowledge"])
+    prompt = (
+        f"你是一位{book['grade']}年级{subject_name}老师，正在带学生复习{book['edition']}{book['semester_name']}"
+        f"《{unit['title']}》这个单元。知识点：{knowledge}。\n"
+        f"请生成 {data.count} 道与这个单元同步的原创练习题，难度适合{book['grade']}年级学生。"
+        "不要照抄教材原题，题目要短、贴近小学生生活；每题给出答案和一句话讲解；"
+        "选择题 options 放 4 个选项并包含正确答案，填空题/计算题 options 设为 []。"
+        "只返回严格 JSON 数组，不要 markdown 或解释文字。"
+        '格式：[{"content":"题目","answer":"答案","explanation":"思路","options":["A","B","C","D"]}]'
+    )
+    raw = call_qwen(
+        [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": f"请出 {data.count} 道《{unit['title']}》的题。"},
+        ],
+        max_tokens=1800,
+    )
+    questions = parse_question_array(raw or "", data.count) if raw else []
+    for question in questions:
+        question["subject"] = book["subject"]
+        question["grade"] = book["grade"]
+        question["source"] = "ai"
+        question["unit_id"] = unit_id
+        question["unit"] = unit_id
+        question["unit_title"] = unit["title"]
+        question["curriculum"] = book_id
+    if not questions:
+        return {
+            "questions": [],
+            "ai_enabled": True,
+            "ai_generated": False,
+            "book_id": book_id,
+            "unit_id": unit_id,
+            "note": "AI 暂时没有生成有效题目，请重试",
+        }
+
+    record_ai_use(db, user.id)
+    status_payload = membership_payload(db, user.id)
+    return {
+        "questions": questions,
+        "ai_enabled": True,
+        "ai_generated": True,
+        "book_id": book_id,
+        "unit_id": unit_id,
         "ai_quota": status_payload["ai_quota"],
         "ai_used_today": status_payload["ai_used_today"],
         "ai_left_today": status_payload["ai_left_today"],
