@@ -4,7 +4,7 @@
       <view class="ai-avatar">🤖</view>
       <view class="ai-intro">
         <text class="ai-name">AI 小老师</text>
-        <text class="ai-desc">会算数、会背古诗、能查单词，还会听你说说今天的事</text>
+        <text class="ai-desc">会算数、会背古诗、能查单词；点回答下方 🔊 可以朗读</text>
       </view>
       <text class="ai-status">{{ sending ? '思考中…' : '在线' }}</text>
     </view>
@@ -22,7 +22,17 @@
           <view class="bubble" :class="message.role">
             <text class="bubble-text">{{ message.content }}</text>
           </view>
-          <text v-if="message.created_at" class="bubble-time">{{ message.created_at }}</text>
+          <view v-if="message.role === 'assistant' || message.created_at" class="bubble-meta">
+            <text v-if="message.created_at" class="bubble-time">{{ message.created_at }}</text>
+            <text
+              v-if="message.role === 'assistant'"
+              class="speak-link"
+              :class="{ active: speakingIndex === i }"
+              @click.stop="speakMessage(message, i)"
+            >
+              {{ speakingIndex === i ? '⏹ 停止' : '🔊 朗读' }}
+            </text>
+          </view>
         </view>
       </view>
 
@@ -88,6 +98,7 @@ import { chatWithAiRemote } from '../../services/aiRemote.js'
 
 const isRemote = IS_REMOTE
 const listening = ref(false)
+const speakingIndex = ref(-1)
 let recognition = null
 
 const quickPrompts = ['8 + 7 等于几？', '“春晓”怎么背？', '苹果的英文是什么？', '“守株待兔”是什么意思？', '我考得不好，有点难过']
@@ -149,11 +160,66 @@ onUnload(() => {
     }
     recognition = null
   }
+  stopSpeech()
   if (typeof window === 'undefined' || !window.visualViewport || !viewportListener) return
   window.visualViewport.removeEventListener('resize', viewportListener)
   window.visualViewport.removeEventListener('scroll', viewportListener)
   viewportListener = null
 })
+
+function cleanSpeechText(text) {
+  return String(text || '')
+    .replace(/https?:\/\/\S+/g, '链接')
+    .replace(/[*#`_>]/g, '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function stopSpeech() {
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel()
+  }
+  speakingIndex.value = -1
+}
+
+function speakMessage(message, index) {
+  if (typeof window === 'undefined' || !window.speechSynthesis || typeof window.SpeechSynthesisUtterance === 'undefined') {
+    toast('当前浏览器不支持语音朗读，请用 Chrome / Edge')
+    return
+  }
+  if (speakingIndex.value === index) {
+    stopSpeech()
+    return
+  }
+  const text = cleanSpeechText(message.content)
+  if (!text) {
+    toast('这条回答没有可朗读的内容')
+    return
+  }
+  stopSpeech()
+  try {
+    const utterance = new window.SpeechSynthesisUtterance(text)
+    utterance.lang = 'zh-CN'
+    utterance.rate = 0.95
+    utterance.pitch = 1
+    const voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : []
+    const chinese = voices.find((voice) => /^zh/i.test(voice.lang) || /chinese|中文|普通话/i.test(voice.name))
+    if (chinese) utterance.voice = chinese
+    utterance.onend = () => {
+      if (speakingIndex.value === index) speakingIndex.value = -1
+    }
+    utterance.onerror = () => {
+      speakingIndex.value = -1
+      toast('语音朗读失败，请重试')
+    }
+    speakingIndex.value = index
+    window.speechSynthesis.speak(utterance)
+  } catch (error) {
+    speakingIndex.value = -1
+    toast('语音朗读启动失败，请重试')
+  }
+}
 
 function greetingMessage() {
   return { role: 'assistant', content: aiGreeting(session.grade || 1), created_at: '' }
@@ -326,6 +392,7 @@ async function clearChat() {
     })
   })
   if (!confirmed) return
+  stopSpeech()
   api.clearChatHistory(CHILD_ID)
   messages.value = [greetingMessage()]
   toast('已清空')
@@ -481,6 +548,27 @@ async function clearChat() {
   font-size: 18rpx;
   color: #c0b1a2;
   padding: 0 6rpx;
+}
+
+.bubble-meta {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 0 6rpx;
+}
+
+.speak-link {
+  font-size: 19rpx;
+  color: #8b6fd6;
+  background: #f6f1ff;
+  border-radius: 999rpx;
+  padding: 4rpx 12rpx;
+  line-height: 1.4;
+}
+
+.speak-link.active {
+  color: #fff;
+  background: linear-gradient(135deg, #7c6cff, #ff5f86);
 }
 
 .bubble.typing .bubble-text {
