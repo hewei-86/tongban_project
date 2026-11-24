@@ -9,6 +9,14 @@
       <text class="ai-status">{{ sending ? '思考中…' : '在线' }}</text>
     </view>
 
+    <view v-if="isRemote && memoryText" class="ai-memory">
+      <text class="memory-icon">🧠</text>
+      <view class="memory-main">
+        <text class="memory-title">AI 记得</text>
+        <text class="memory-text">{{ memoryText }}</text>
+      </view>
+    </view>
+
     <view class="quick-wrap">
       <view v-for="prompt in quickPrompts" :key="prompt" class="quick-chip" @click="send(prompt)">
         {{ prompt }}
@@ -97,6 +105,13 @@ import { IS_REMOTE } from '../../config.js'
 import { chatWithAiRemote } from '../../services/aiRemote.js'
 
 const isRemote = IS_REMOTE
+const memoryText = computed(() => {
+  try {
+    return api.getAiLearningProfile?.() || ''
+  } catch (error) {
+    return ''
+  }
+})
 const listening = ref(false)
 const speakingIndex = ref(-1)
 let recognition = null
@@ -340,7 +355,12 @@ async function send(text) {
         const remote = await chatWithAiRemote({
           message: content,
           grade: session.grade || 1,
-          mode: 'chat'
+          mode: 'chat',
+          history: messages.value
+            .slice(0, -1)
+            .slice(-8)
+            .map((item) => ({ role: item.role, content: String(item.content || '').slice(0, 500) })),
+          memory: memoryText.value
         })
         if (remote.ai_generated && remote.answer) {
           answer = remote.answer
@@ -687,4 +707,20 @@ async function clearChat() {
   0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 95, 134, 0.35); }
   50% { transform: scale(1.06); box-shadow: 0 0 0 12rpx rgba(255, 95, 134, 0); }
 }
+
+/* ===== AI 学习档案 ===== */
+.ai-memory {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  margin: 14rpx 0 4rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 22rpx;
+  background: linear-gradient(135deg, #f6f1ff, #eef6ff);
+  border: 1rpx solid #e8ddff;
+}
+.memory-icon { font-size: 28rpx; line-height: 1.2; }
+.memory-main { display: flex; flex-direction: column; gap: 3rpx; min-width: 0; }
+.memory-title { font-size: 19rpx; font-weight: 700; color: #7c6cff; }
+.memory-text { font-size: 19rpx; line-height: 1.5; color: #85759a; word-break: break-word; }
 </style>

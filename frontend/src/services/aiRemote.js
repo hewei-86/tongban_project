@@ -5,7 +5,7 @@
 import { API_BASE, IS_REMOTE } from '../config.js'
 import { getToken } from './remoteAuth.js'
 
-export async function chatWithAiRemote({ message, grade = 1, mode = 'chat' } = {}) {
+export async function chatWithAiRemote({ message, grade = 1, mode = 'chat', history = [], memory = '' } = {}) {
   if (!IS_REMOTE) throw new Error('当前为本地模式')
   const token = getToken()
   if (!token) {
@@ -23,7 +23,7 @@ export async function chatWithAiRemote({ message, grade = 1, mode = 'chat' } = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ message, grade, mode }),
+      body: JSON.stringify({ message, grade, mode, history, memory }),
       signal: controller.signal
     })
     let payload = null

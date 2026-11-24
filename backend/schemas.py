@@ -125,9 +125,16 @@ class QuestionInput(BaseModel):
     options: list[str] = Field(default_factory=list, max_length=6)
 
 
+class ChatTurn(BaseModel):
+    role: str = Field(min_length=1, max_length=16)
+    content: str = Field(min_length=1, max_length=500)
+
+
 class AiTutorRequest(BaseModel):
     message: str = Field(min_length=1, max_length=800)
     grade: int = Field(default=1, ge=1, le=6)
     mode: str = Field(default="chat", max_length=20)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=10)
+    memory: str = Field(default="", max_length=1200)
 
 

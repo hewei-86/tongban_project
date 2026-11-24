@@ -890,6 +890,45 @@ export function createEngine(storage, options = {}) {
 
   // ==================== AI 小老师 ====================
 
+  /** 给 AI 的学习档案：只含年级、薄弱点、最近错题，不含姓名/学校等隐私 */
+  function getAiLearningProfile() {
+    const profile = state.profiles.find((item) => item.user_id === CHILD_ID) || state.profiles[0] || {}
+    const grade = Number(profile.grade || state.settings.grade || 1)
+    const wrongTexts = state.wrong
+      .filter((item) => item.user_id === CHILD_ID && !item.is_mastered)
+      .slice(-4)
+      .map((item) => findQuestion(item.question_id)?.content)
+      .filter(Boolean)
+      .map((text) => (text.length > 42 ? `${text.slice(0, 42)}…` : text))
+
+    const recentRecords = state.records.filter((item) => item.user_id === CHILD_ID).slice(-30)
+    const labels = { math: '数学', chinese: '语文', english: '英语' }
+    const stats = {}
+    for (const record of recentRecords) {
+      const key = record.subject || 'other'
+      if (!stats[key]) stats[key] = { total: 0, correct: 0 }
+      stats[key].total += 1
+      if (record.is_correct) stats[key].correct += 1
+    }
+    const weak = Object.entries(stats)
+      .filter(([, item]) => item.total >= 3)
+      .map(([key, item]) => ({
+        key,
+        label: labels[key] || key,
+        accuracy: Math.round((item.correct / item.total) * 100)
+      }))
+      .sort((a, b) => a.accuracy - b.accuracy)[0]
+
+    const lastRecord = recentRecords[recentRecords.length - 1]
+    const lastQuestion = lastRecord ? findQuestion(lastRecord.question_id) : null
+
+    const bits = [`${grade}年级`]
+    if (lastQuestion?.unit_title) bits.push(`最近在练：${lastQuestion.unit_title}`)
+    if (weak) bits.push(`最近${weak.label}正确率 ${weak.accuracy}%`)
+    if (wrongTexts.length) bits.push(`最近错题：${wrongTexts.join('；')}`)
+    return bits.join('；').slice(0, 500)
+  }
+
   function chatWithAi({ user_id = CHILD_ID, grade = 1, message = '' } = {}) {
     const text = String(message || '').trim()
     if (!text) throw new Error('先写一句想问的话吧')
@@ -1474,6 +1513,7 @@ export function createEngine(storage, options = {}) {
     importQuestions,
     // AI
     chatWithAi,
+    getAiLearningProfile,
     recordAiChat,
     getChatHistory,
     clearChatHistory,

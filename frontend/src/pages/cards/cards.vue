@@ -18,7 +18,7 @@
         :key="item.key"
         class="seg-item"
         :class="{ active: tab === item.key }"
-        @click="tab = item.key"
+        @click="changeTab(item.key)"
       >
         {{ item.label }}
       </view>
@@ -31,6 +31,10 @@
         <text class="flash-emoji">{{ currentWord.emoji }}</text>
         <text class="flash-word">{{ currentWord.word }}</text>
         <text class="flash-phonetic">{{ currentWord.phonetic }}</text>
+        <view class="word-audio">
+          <view class="audio-btn" @click.stop="readWord">🔊 读单词</view>
+          <view class="audio-btn ghost" @click.stop="readExample">读例句</view>
+        </view>
         <view v-if="revealed" class="flash-reveal pop-in">
           <text class="flash-meaning">{{ currentWord.meaning }}</text>
           <text class="flash-example">{{ currentWord.example }}</text>
@@ -45,7 +49,11 @@
         <view class="btn btn-ghost" @click="prevWord">‹ 上一个</view>
         <view class="btn btn-primary" @click="nextWord">下一个 ›</view>
       </view>
-      <text class="safety-note">先自己读一遍，再点开看意思，记得更牢。</text>
+      <view class="auto-read-row" @click.stop="toggleAutoRead">
+        <text>自动朗读单词</text>
+        <view class="auto-read-pill" :class="{ on: autoRead }">{{ autoRead ? '开' : '关' }}</view>
+      </view>
+      <text class="safety-note">先听一遍，再跟着读；点开卡片看意思，记得更牢。</text>
     </template>
 
     <!-- ============ 古诗 ============ -->
@@ -107,9 +115,11 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { onUnload } from '@dcloudio/uni-app'
 import { api, toast } from '../../services/api.js'
 import { session } from '../../services/session.js'
 import { getDailyTip, IDIOMS, POEMS, WORDS, wordsForGrade, poemsForGrade } from '../../data/cards.js'
+import { speak, stopSpeech, speechSupported } from '../../services/speech.js'
 
 const tabs = [
   { key: 'word', label: '单词' },
@@ -124,6 +134,58 @@ const tab = ref('word')
 const wordIndex = ref(0)
 const revealed = ref(false)
 const dailyTip = ref(getDailyTip())
+const autoRead = ref(false)
+try {
+  autoRead.value = Boolean(uni.getStorageSync('tb_word_auto_read'))
+} catch (error) {
+  autoRead.value = false
+}
+
+function changeTab(key) {
+  stopSpeech()
+  tab.value = key
+}
+
+function toggleAutoRead() {
+  autoRead.value = !autoRead.value
+  try {
+    uni.setStorageSync('tb_word_auto_read', autoRead.value)
+  } catch (error) {
+    // ignore
+  }
+  if (autoRead.value) readWord()
+}
+
+function readWord() {
+  if (!speechSupported()) {
+    toast('当前浏览器不支持语音朗读，请用 Chrome / Edge')
+    return
+  }
+  const ok = speak(currentWord.value.word, {
+    lang: 'en-US',
+    rate: 0.8,
+    onError: () => toast('朗读失败，请检查系统语音')
+  })
+  if (!ok) toast('朗读失败，请重试')
+}
+
+function readExample() {
+  const text = currentWord.value.example
+  if (!text) {
+    toast('这张卡片还没有例句')
+    return
+  }
+  if (!speechSupported()) {
+    toast('当前浏览器不支持语音朗读，请用 Chrome / Edge')
+    return
+  }
+  const ok = speak(text, {
+    lang: 'en-US',
+    rate: 0.85,
+    onError: () => toast('朗读失败，请检查系统语音')
+  })
+  if (!ok) toast('朗读失败，请重试')
+}
 
 const words = computed(() => {
   const list = wordsForGrade(session.grade || 1)
@@ -157,15 +219,21 @@ function toggleFavorite(kind, id) {
 
 function nextWord() {
   if (!words.value.length) return
+  stopSpeech()
   wordIndex.value = (wordIndex.value + 1) % words.value.length
   revealed.value = false
+  if (autoRead.value) setTimeout(readWord, 180)
 }
 
 function prevWord() {
   if (!words.value.length) return
+  stopSpeech()
   wordIndex.value = (wordIndex.value - 1 + words.value.length) % words.value.length
   revealed.value = false
+  if (autoRead.value) setTimeout(readWord, 180)
 }
+
+onUnload(stopSpeech)
 
 function kindLabel(kind) {
   return { word: '英语单词', poem: '古诗', idiom: '成语' }[kind] || '卡片'
@@ -456,4 +524,48 @@ function favoriteSub(item) {
 .poem-lines { background: linear-gradient(160deg, #fffaf4, #fff3e6); border-radius: 22rpx; }
 .tip-card { border-radius: 28rpx; }
 .fav-card { background: linear-gradient(160deg, #fffdf9, #fffaf4); }
+
+/* ===== 单词朗读 ===== */
+.word-audio {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+.audio-btn {
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(135deg, #7c6cff, #5b8cff);
+  color: #fff;
+  font-size: 21rpx;
+  font-weight: 700;
+  box-shadow: 0 8rpx 18rpx -12rpx rgba(90, 90, 220, 0.6);
+}
+.audio-btn.ghost {
+  background: #f4f1ff;
+  color: #6d5bd0;
+  box-shadow: none;
+}
+.auto-read-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  margin-top: 14rpx;
+  font-size: 20rpx;
+  color: #9a8aab;
+}
+.auto-read-pill {
+  min-width: 70rpx;
+  text-align: center;
+  padding: 3rpx 14rpx;
+  border-radius: 999rpx;
+  background: #f1eaf8;
+  color: #9a8aab;
+  font-size: 18rpx;
+}
+.auto-read-pill.on {
+  background: #e8f8ef;
+  color: #1f9d62;
+}
 </style>
