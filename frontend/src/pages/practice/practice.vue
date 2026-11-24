@@ -2,9 +2,12 @@
   <view class="page">
     <view class="page-head">
       <view>
-        <text class="page-head-sub">{{ gradeLabel }} · 答错的题会自动进错题本</text>
+        <text class="page-head-sub">{{ pageSubtitle }}</text>
       </view>
-      <view class="btn btn-soft btn-sm" :class="{ disabled: loading }" @click="onAiClick">🤖 AI 出题</view>
+      <view class="page-head-actions">
+        <view class="btn btn-soft btn-sm" @click="goCurriculum">📚 教材同步</view>
+        <view v-if="!unit" class="btn btn-soft btn-sm" :class="{ disabled: loading }" @click="onAiClick">🤖 AI 出题</view>
+      </view>
     </view>
 
     <view class="card flush">
@@ -176,6 +179,9 @@ const subjectLabels = { math: '数学', chinese: '语文', english: '英语' }
 
 const subject = ref('math')
 const grade = ref(session.grade || 1)
+const unit = ref('')
+const unitName = ref('')
+const curriculum = ref('')
 const questions = ref([])
 const index = ref(0)
 const selected = ref('')
@@ -193,6 +199,9 @@ let requestSeq = 0
 
 const subjectLabel = computed(() => subjectLabels[subject.value] || '数学')
 const gradeLabel = computed(() => grades[grade.value - 1] || '一年级')
+const pageSubtitle = computed(
+  () => `${unitName.value ? `${unitName.value} · ` : ''}${gradeLabel.value} · 答错的题会自动进错题本`
+)
 const current = computed(() => questions.value[index.value] || null)
 const isLast = computed(() => index.value >= questions.value.length - 1)
 const answeredCount = computed(() => answersLog.value.length)
@@ -279,7 +288,7 @@ async function loadQuestions(generated = false) {
   try {
     const payload = generated
       ? await fetchAiPractice()
-      : { questions: api.getQuestions({ subject: subject.value, grade: grade.value, limit: 5 }) }
+      : { questions: api.getQuestions({ subject: subject.value, grade: grade.value, limit: 5, unit: unit.value || undefined }) }
     if (seq !== requestSeq) return
 
     questions.value = payload.questions || []
@@ -303,13 +312,29 @@ async function loadQuestions(generated = false) {
 }
 
 function onAiClick() {
-  if (loading.value) return
+  if (loading.value || unit.value) return
   loadQuestions(true)
+}
+
+function goCurriculum() {
+  uni.navigateTo({ url: '/pages/curriculum/curriculum' })
+}
+
+function clearUnit() {
+  if (!unit.value) return
+  unit.value = ''
+  unitName.value = ''
+  curriculum.value = ''
 }
 
 onLoad((options = {}) => {
   if (options.subject && subjectLabels[options.subject]) subject.value = options.subject
   if (options.grade) grade.value = Number(options.grade) || grade.value
+  if (options.unit) {
+    unit.value = decodeURIComponent(options.unit)
+    unitName.value = decodeURIComponent(options.unit_name || '教材同步')
+    curriculum.value = options.curriculum || ''
+  }
   loadQuestions(false)
 })
 
@@ -317,12 +342,14 @@ onUnload(stopTimer)
 
 function changeSubject(key) {
   if (key === subject.value) return
+  clearUnit()
   subject.value = key
   loadQuestions(false)
 }
 
 function onGradeChange(event) {
   const value = Number(event.detail.value) + 1
+  clearUnit()
   grade.value = value
   switchGrade(value)
   loadQuestions(false)
@@ -672,4 +699,17 @@ function goWrongBook() {
 .feedback.no { background: linear-gradient(160deg, #fff8f4, #ffefe9); border: 1rpx solid #ffdccc; }
 .sum-cell { background: linear-gradient(160deg, #fffaf4, #fff0e3); border-radius: 20rpx; }
 .q-helper { margin-top: 20rpx; }
+
+/* ===== 教材同步入口 ===== */
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  flex-shrink: 0;
+}
+.page-head-actions .btn {
+  padding-left: 14rpx;
+  padding-right: 14rpx;
+  white-space: nowrap;
+}
 </style>

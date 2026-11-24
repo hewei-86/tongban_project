@@ -31,6 +31,19 @@ test('旧账号加载时会补齐新增题库', () => {
   assert.equal(new Set(bank.map((item) => item.content)).size, bank.length)
 })
 
+test('教材同步：按单元取题并统计单元进度', () => {
+  const { engine } = fresh()
+  const questions = engine.getQuestions({ subject: 'math', grade: 3, limit: 5, unit: 'u1' })
+  assert.equal(questions.length, 5)
+  assert.ok(questions.every((item) => item.unit === 'u1'))
+  assert.equal(engine.getUnitProgress('pep-math-3-1', 'u1').answered, 0)
+  engine.submitLearning({ question_id: questions[0].id, answer: '__wrong__', seconds: 10 })
+  const progress = engine.getUnitProgress('pep-math-3-1', 'u1')
+  assert.equal(progress.total, 5)
+  assert.equal(progress.answered, 1)
+  assert.equal(progress.accuracy, 0)
+})
+
 test('初始数据：孩子档案、示例记录和错题都已就绪', () => {
   const { engine } = fresh()
   const dashboard = engine.getDashboard()

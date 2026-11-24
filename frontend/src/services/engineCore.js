@@ -84,6 +84,9 @@ function createState(now = new Date(), options = {}) {
     explanation: item.explanation,
     options: [...item.options],
     accept: [...(item.accept || [])],
+    unit: item.unit || null,
+    unit_title: item.unit_title || null,
+    curriculum: item.curriculum || null,
     source: 'bank',
     created_at: isoAt(-30, 9, 0, now)
   }))
@@ -291,6 +294,9 @@ export function createEngine(storage, options = {}) {
         explanation: item.explanation,
         options: [...(item.options || [])],
         accept: [...(item.accept || [])],
+        unit: item.unit || null,
+        unit_title: item.unit_title || null,
+        curriculum: item.curriculum || null,
         source: 'bank',
         created_at: isoAt(-30, 9, 0, now())
       })
@@ -484,6 +490,9 @@ export function createEngine(storage, options = {}) {
       grade: question.grade,
       content: question.content,
       options: question.options || [],
+      unit: question.unit || null,
+      unit_title: question.unit_title || null,
+      curriculum: question.curriculum || null,
       ai_generated: question.source === 'ai'
     }
   }
@@ -565,14 +574,38 @@ export function createEngine(storage, options = {}) {
     }
   }
 
-  function getQuestions({ subject = 'math', grade = 1, limit = 5 } = {}) {
+  function getQuestions({ subject = 'math', grade = 1, limit = 5, unit = '' } = {}) {
     const level = clamp(grade, 1, 3)
-    const exact = state.questions.filter((item) => item.subject === subject && item.grade === level && item.source === 'bank')
-    const lower = state.questions.filter((item) => item.subject === subject && item.grade < level && item.source === 'bank')
+    const exact = state.questions.filter(
+      (item) =>
+        item.subject === subject &&
+        item.grade === level &&
+        item.source === 'bank' &&
+        (!unit || item.unit === unit)
+    )
+    const lower = unit
+      ? []
+      : state.questions.filter((item) => item.subject === subject && item.grade < level && item.source === 'bank')
     const shuffle = (list) => [...list].sort(() => Math.random() - 0.5)
     let pool = shuffle(exact)
     if (pool.length < limit) pool = pool.concat(shuffle(lower))
     return pool.slice(0, limit).map(serializeQuestion)
+  }
+
+  function getUnitProgress(curriculumId, unitId) {
+    const questions = state.questions.filter(
+      (item) => item.curriculum === curriculumId && item.unit === unitId
+    )
+    const questionIds = new Set(questions.map((item) => item.id))
+    const records = state.records.filter((item) => questionIds.has(item.question_id))
+    const answeredIds = new Set(records.map((item) => item.question_id))
+    const correctIds = new Set(records.filter((item) => item.is_correct).map((item) => item.question_id))
+    return {
+      total: questions.length,
+      answered: answeredIds.size,
+      correct: correctIds.size,
+      accuracy: answeredIds.size ? Math.round((correctIds.size / answeredIds.size) * 100) : 0
+    }
   }
 
   function submitLearning({ user_id = CHILD_ID, question_id, answer, seconds = 40 } = {}) {
@@ -1428,6 +1461,7 @@ export function createEngine(storage, options = {}) {
     // 学习
     getDashboard,
     getQuestions,
+    getUnitProgress,
     submitLearning,
     getDailyTasks,
     getCheckin,

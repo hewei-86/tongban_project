@@ -193,6 +193,14 @@
             <text class="tool-desc">{{ dashboard.wrong_unmastered || 0 }} 道待掌握</text>
           </view>
         </view>
+        <view class="link-row" @click="goPage('/pages/curriculum/curriculum')">
+          <view class="link-icon">📚</view>
+          <view class="link-main">
+            <text class="link-title">教材同步</text>
+            <text class="link-desc">河北保定 · 人教版三上数学，按单元练</text>
+          </view>
+          <text class="link-arrow">›</text>
+        </view>
         <view class="link-row" @click="goPage('/pages/pk/pk')">
           <view class="link-icon">⚔️</view>
           <view class="link-main">

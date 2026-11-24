@@ -3,6 +3,7 @@
  * answer 为判定答案，accept 可选，用于接受同义写法。
  */
 import { EXTRA_QUESTIONS } from './questionExtras.js'
+import { CURRICULUM_QUESTIONS } from './curriculum.js'
 
 export const SUBJECTS = [
   { key: 'math', label: '数学', icon: '➗', tone: 'math' },
@@ -91,7 +92,10 @@ export const QUESTION_BANK = [
   q('english', 3, 'big 的反义词是？', 'small', 'big 大，small 小；tall 高，short 矮。', ['small', 'tall', 'long', 'new']),
 
   // ================= 扩展题库 =================
-  ...EXTRA_QUESTIONS
+  ...EXTRA_QUESTIONS,
+
+  // ================= 教材同步：人教版三上数学 =================
+  ...CURRICULUM_QUESTIONS
 ]
 
 /** 取某学科某年级的题目（题库不足时向上兼容低年级） */

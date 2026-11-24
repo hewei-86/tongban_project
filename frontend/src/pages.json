@@ -13,6 +13,12 @@
       }
     },
     {
+      "path": "pages/curriculum/curriculum",
+      "style": {
+        "navigationBarTitleText": "教材同步"
+      }
+    },
+    {
       "path": "pages/ai/ai",
       "style": {
         "navigationBarTitleText": "AI 小老师"
