@@ -8,6 +8,9 @@ COPY requirements.txt .
 ARG PIP_INDEX_URL=https://pypi.org/simple
 RUN pip install --no-cache-dir -i "$PIP_INDEX_URL" -r requirements.txt
 
+# 每次提交强制刷新代码层，避免 Docker 复用旧 COPY 缓存
+ARG CACHEBUST=0
+RUN echo "cachebust=${CACHEBUST}" >/dev/null
 COPY . .
 
 EXPOSE 8000

@@ -12,7 +12,7 @@ import json
 import os
 import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -486,9 +486,10 @@ def ai_tutor_chat(
 # ==================== 教材同步（人教版三上） ====================
 
 def _curriculum_active_today(db: Session, user_id: int):
+    today = datetime.now(timezone(timedelta(hours=8))).date()
     return (
         db.query(CurriculumAccess)
-        .filter(CurriculumAccess.user_id == user_id, CurriculumAccess.access_date == date.today())
+        .filter(CurriculumAccess.user_id == user_id, CurriculumAccess.access_date == today)
         .all()
     )
 
@@ -561,7 +562,7 @@ def activate_curriculum_book(
         )
 
     try:
-        db.add(CurriculumAccess(user_id=user.id, book_id=book_id, access_date=date.today()))
+        db.add(CurriculumAccess(user_id=user.id, book_id=book_id, access_date=datetime.now(timezone(timedelta(hours=8))).date()))
         db.commit()
     except IntegrityError:
         db.rollback()

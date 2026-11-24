@@ -226,7 +226,7 @@ jobs:
           echo ">>> Pulling MySQL image..."
           timeout 300 $DC pull mysql || { echo "❌ MySQL 镜像拉取失败（旧站保持运行）"; exit 1; }
           echo ">>> Building backend image..."
-          timeout 600 $DC build backend || { echo "❌ 后端镜像构建失败（旧站保持运行）"; exit 1; }
+          timeout 600 $DC build --build-arg CACHEBUST=${{ github.sha }} backend || { echo "❌ 后端镜像构建失败（旧站保持运行）"; exit 1; }
 
           # 4. 启动 MySQL 并等待健康（不停止旧站）
           echo ">>> Starting MySQL..."
@@ -286,6 +286,13 @@ jobs:
             echo "❌ backend API FAILED - logs:"
             $DC logs --tail=50 backend
             $DC logs --tail=30 mysql
+            exit 1
+          }
+
+          # 防止复用旧镜像导致新接口 404
+          docker exec tongban-backend test -f /app/curriculum.py || {
+            echo "❌ backend image is stale (curriculum.py missing)"
+            $DC logs --tail=30 backend
             exit 1
           }
 
