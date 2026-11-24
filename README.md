@@ -61,7 +61,7 @@
 | 💗 亲子互评 | 默契度、5 星评价、鼓励留言、互评记录 |
 | 👨‍👩‍👧 家长中心 | 孩子概况、周报 / 月报、学科正确率、每日学习曲线、自动生成的小建议、学习目标、每日时长管理 |
 | 🌟 会员中心 | 家庭会员、权益说明、兑换码开通、今日 AI 额度 |
-| ⚔️ 真人 PK | 1v1 随机匹配、5 题、服务端计时判分、速度加分、结算 |
+| ⚔️ 真人 PK | 1v1 随机匹配、5 题、服务端计时判分、速度加分；结算页展示胜利者/失败者名称与分数、撒花动画 |
 | 🛠️ 管理后台 | 独立 `/admin/`：数据概览、用户/停用、手动开通会员、兑换码、题库、PK 对局、审计 |
 | 🔐 登录 / 注册 | 服务器版：云端账号 + JWT + MySQL 多端同步；Pages 演示版：本机账号 / 游客 |
 | 🙋 我的 | 账号信息、会员入口、角色切换、年级切换、数据导出 / 导入 / 重置、隐私与项目说明 |
@@ -223,7 +223,7 @@ tongban_project/
 │  ├─ main.py / models.py / schemas.py / database.py / security.py
 │  ├─ membership.py / admin_api.py / membership_api.py
 │  ├─ pk_api.py / pk_bank.py         # 真人 PK WebSocket 与服务端题库
-│  ├─ test_api.py                   # 40 项鉴权 / 会员 / PK / 同步自测
+│  ├─ test_api.py                   # 45 项鉴权 / 会员 / PK / 同步自测
 │  ├─ requirements.txt / Dockerfile
 │  └─ .env                           # 本地配置（不提交）
 ├─ admin/                            # 独立管理后台（Vue 3 + Vite，部署到 /admin/）

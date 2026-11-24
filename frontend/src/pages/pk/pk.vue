@@ -81,23 +81,51 @@
         </view>
       </view>
 
-      <view v-if="phase === 'finished'" class="card pk-card result-card">
-        <text class="result-emoji">{{ resultEmoji }}</text>
-        <text class="result-title">{{ resultTitle }}</text>
-        <view class="result-score">
-          <view class="result-side">
-            <text class="result-label">我</text>
-            <text class="result-num">{{ myScore }}</text>
-          </view>
-          <text class="result-colon">:</text>
-          <view class="result-side">
-            <text class="result-label">{{ opponent?.nickname || '对手' }}</text>
-            <text class="result-num">{{ opponentScore }}</text>
-          </view>
+      <view v-if="phase === 'finished'" class="result-stage">
+        <view class="confetti" aria-hidden="true">
+          <text
+            v-for="piece in confetti"
+            :key="piece.id"
+            class="confetti-piece"
+            :style="piece.style"
+          ></text>
         </view>
-        <view class="pk-actions">
-          <view class="pk-start" @click="restart">再来一局</view>
-          <view class="pk-cancel" @click="goBack">返回首页</view>
+
+        <view class="card pk-card result-card">
+          <text class="result-emoji">{{ resultEmoji }}</text>
+          <text class="result-title">{{ resultTitle }}</text>
+          <text class="result-subtitle">{{ resultSubtitle }}</text>
+
+          <view class="settle-table">
+            <view class="settle-head">
+              <text>结果</text>
+              <text>玩家</text>
+              <text class="align-right">分数</text>
+            </view>
+            <view
+              v-for="row in resultRows"
+              :key="row.id"
+              class="settle-row"
+              :class="row.className"
+            >
+              <view class="settle-rank">
+                <text class="settle-medal">{{ row.medal }}</text>
+                <text>{{ row.label }}</text>
+              </view>
+              <view class="settle-name">
+                <text class="name-text">{{ row.name }}</text>
+                <text v-if="row.me" class="me-tag">我</text>
+              </view>
+              <text class="settle-score">{{ row.score }}<text class="score-unit">分</text></text>
+            </view>
+          </view>
+
+          <text class="result-note">本局 {{ final?.question_count || total }} 题 · 答对 100 分 + 速度奖励</text>
+
+          <view class="pk-actions">
+            <view class="pk-start" @click="restart">再来一局</view>
+            <view class="pk-cancel" @click="goBack">返回首页</view>
+          </view>
         </view>
       </view>
 
@@ -139,14 +167,75 @@ const opponentScore = computed(() => {
 const subjectLabel = computed(() => ({ math: '数学', chinese: '语文', english: '英语' }[question.value?.subject] || '练习'))
 const resultTitle = computed(() => {
   if (!final.value) return ''
-  if (final.value.draw) return '平局！你们不相上下'
-  return final.value.winner_id === Number(myId.value) ? '你赢了！' : '差一点点，再试一次'
+  if (final.value.draw) return '平局！'
+  return final.value.winner_id === Number(myId.value) ? '🎉 你赢了！' : '这局惜败，再试一次'
 })
 const resultEmoji = computed(() => {
   if (!final.value) return '⚔️'
   if (final.value.draw) return '🤝'
   return final.value.winner_id === Number(myId.value) ? '🏆' : '💪'
 })
+
+const myName = computed(() => final.value?.players?.[myId.value] || me?.nickname || '我')
+const opponentId = computed(() => {
+  const keys = Object.keys(final.value?.scores || scores.value || {})
+  return keys.find((key) => key !== myId.value) || String(opponent.value?.id || '')
+})
+const opponentName = computed(() => {
+  return final.value?.players?.[opponentId.value] || opponent.value?.nickname || '对手'
+})
+
+const resultRows = computed(() => {
+  const payload = final.value
+  if (!payload) return []
+  const scoreMap = payload.scores || {}
+  const players = payload.players || {}
+  let rows = Object.keys(scoreMap).map((id) => ({
+    id,
+    name: players[id] || (id === myId.value ? myName.value : opponentName.value),
+    score: Number(scoreMap[id]) || 0,
+    me: id === myId.value
+  }))
+  if (!rows.length) {
+    rows = [
+      { id: myId.value, name: myName.value, score: myScore.value, me: true },
+      { id: opponentId.value, name: opponentName.value, score: opponentScore.value, me: false }
+    ]
+  }
+  if (payload.draw) {
+    return rows.map((row) => ({ ...row, label: '平局', medal: '🤝', className: 'draw' }))
+  }
+  const winnerId = String(payload.winner_id)
+  const sorted = [...rows].sort((a, b) => b.score - a.score)
+  const winner = rows.find((row) => row.id === winnerId) || sorted[0]
+  const loser = rows.find((row) => row.id !== winner.id)
+  return [
+    { ...winner, label: '胜利者', medal: '🏆', className: 'winner' },
+    ...(loser ? [{ ...loser, label: '失败者', medal: '🥈', className: 'loser' }] : [])
+  ]
+})
+
+const resultSubtitle = computed(() => {
+  if (!final.value) return ''
+  if (final.value.draw) return '两位小选手不相上下，都是赢家'
+  const winner = resultRows.value.find((row) => row.label === '胜利者')
+  if (final.value.winner_id === Number(myId.value)) {
+    return `你以 ${myScore.value} 分拿下本局`
+  }
+  return `${winner?.name || opponentName.value} 以 ${winner?.score ?? opponentScore.value} 分获胜`
+})
+
+const confettiColors = ['#ffcf5c', '#ff7a4d', '#7c6cff', '#1fa97a', '#ff5f86']
+const confetti = Array.from({ length: 24 }, (_, i) => ({
+  id: i,
+  style: {
+    left: `${(i * 37) % 100}%`,
+    animationDelay: `${(i % 8) * 0.12}s`,
+    animationDuration: `${1.8 + (i % 5) * 0.25}s`,
+    background: confettiColors[i % confettiColors.length],
+    transform: `rotate(${i * 31}deg)`
+  }
+}))
 
 function wsUrl() {
   const origin = API_BASE || window.location.origin
@@ -381,4 +470,150 @@ onUnload(() => {
 .pk-actions { display: flex; gap: 12rpx; width: 100%; margin-top: 16rpx; }
 .pk-actions .pk-start { flex: 1; margin-top: 0; }
 .pk-actions .pk-cancel { flex: 1; margin-top: 0; display: flex; align-items: center; justify-content: center; }
+
+/* ===== 结算动画与胜败名单 ===== */
+.result-stage {
+  position: relative;
+  margin-top: 22rpx;
+  overflow: hidden;
+}
+.confetti {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.confetti-piece {
+  position: absolute;
+  top: -24rpx;
+  width: 12rpx;
+  height: 22rpx;
+  border-radius: 4rpx;
+  opacity: 0;
+  animation-name: confetti-fall;
+  animation-timing-function: ease-in;
+  animation-iteration-count: infinite;
+}
+@keyframes confetti-fall {
+  0% { opacity: 0; transform: translateY(-24rpx) rotate(0deg); }
+  10% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(760rpx) rotate(540deg); }
+}
+.result-card {
+  position: relative;
+  z-index: 2;
+  align-items: center;
+  text-align: center;
+  padding: 34rpx 24rpx 28rpx;
+  animation: result-pop 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes result-pop {
+  from { opacity: 0; transform: scale(0.9) translateY(16rpx); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.result-emoji {
+  font-size: 66rpx;
+  animation: trophy-bounce 0.9s ease-in-out infinite;
+}
+@keyframes trophy-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-8rpx) scale(1.06); }
+}
+.result-title { font-size: 34rpx; font-weight: 800; color: #3f3157; }
+.result-subtitle {
+  display: block;
+  font-size: 21rpx;
+  color: #8a7a9a;
+  margin-top: 6rpx;
+  line-height: 1.5;
+}
+.settle-table {
+  width: 100%;
+  margin-top: 20rpx;
+  border-radius: 20rpx;
+  overflow: hidden;
+  border: 1rpx solid #f0e8f7;
+}
+.settle-head,
+.settle-row {
+  display: grid;
+  grid-template-columns: 150rpx 1fr 140rpx;
+  align-items: center;
+  gap: 8rpx;
+  padding: 14rpx 16rpx;
+}
+.settle-head {
+  background: #faf6ff;
+  font-size: 19rpx;
+  color: #9a8aab;
+}
+.settle-row {
+  font-size: 23rpx;
+  color: #4b3a6b;
+  background: #fffdfa;
+  border-top: 1rpx solid #f6eefa;
+}
+.settle-row.winner {
+  background: linear-gradient(135deg, #fff8e1, #fff0d2);
+}
+.settle-row.loser {
+  background: #faf8f5;
+  color: #8a7a6a;
+}
+.settle-row.draw {
+  background: #f7f3ff;
+}
+.settle-rank {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 20rpx;
+  font-weight: 700;
+}
+.settle-medal { font-size: 26rpx; }
+.settle-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  min-width: 0;
+}
+.name-text {
+  max-width: 220rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.me-tag {
+  font-size: 16rpx;
+  color: #fff;
+  background: #7c6cff;
+  border-radius: 999rpx;
+  padding: 2rpx 8rpx;
+  flex-shrink: 0;
+}
+.settle-score {
+  text-align: right;
+  font-size: 34rpx;
+  font-weight: 800;
+  color: #4b3a6b;
+}
+.score-unit {
+  font-size: 17rpx;
+  font-weight: 400;
+  color: #9a8aab;
+  margin-left: 3rpx;
+}
+.align-right { text-align: right; }
+.result-note {
+  display: block;
+  font-size: 19rpx;
+  color: #b3a394;
+  margin-top: 14rpx;
+}
 </style>
