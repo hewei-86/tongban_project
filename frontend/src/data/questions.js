@@ -2,6 +2,7 @@
  * 本地题库：3 个学科 × 3 个年级，全部离线可用。
  * answer 为判定答案，accept 可选，用于接受同义写法。
  */
+import { EXTRA_QUESTIONS } from './questionExtras.js'
 
 export const SUBJECTS = [
   { key: 'math', label: '数学', icon: '➗', tone: 'math' },
@@ -87,7 +88,10 @@ export const QUESTION_BANK = [
   q('english', 3, 'I like reading ___.', 'books', 'like doing sth. 表示喜欢做某事，reading books 表示读书。', ['books', 'book', 'a book', 'bookes']),
   q('english', 3, 'How old are you? 最合适的回答是？', 'I am nine.', '问年龄用 How old，回答 I am + 数字。', ['I am nine.', 'I am fine.', 'It is nine.', 'My name is Tom.']),
   q('english', 3, '“星期一”的英文是？', 'Monday', 'Monday 星期一，Tuesday 星期二，Sunday 星期日。', ['Monday', 'Sunday', 'Tuesday', 'Friday']),
-  q('english', 3, 'big 的反义词是？', 'small', 'big 大，small 小；tall 高，short 矮。', ['small', 'tall', 'long', 'new'])
+  q('english', 3, 'big 的反义词是？', 'small', 'big 大，small 小；tall 高，short 矮。', ['small', 'tall', 'long', 'new']),
+
+  // ================= 扩展题库 =================
+  ...EXTRA_QUESTIONS
 ]
 
 /** 取某学科某年级的题目（题库不足时向上兼容低年级） */

@@ -266,7 +266,37 @@ export function createEngine(storage, options = {}) {
     if (!state.settings || typeof state.settings !== 'object') state.settings = base.settings
     if (!state.nextId || typeof state.nextId !== 'object') state.nextId = base.nextId
     else state.nextId = { ...base.nextId, ...state.nextId }
+    mergeBankQuestions(state)
     return state
+  }
+
+  /** 老账号的 state 里只保存了旧题库；升级题库后把新增的 bank 题补进去 */
+  function mergeBankQuestions(state) {
+    if (!Array.isArray(state.questions)) return
+    const keyOf = (item) => `${item.subject}|${item.grade}|${item.content}`
+    const existing = new Set(
+      state.questions.filter((item) => item.source === 'bank').map((item) => keyOf(item))
+    )
+    let maxId = state.questions.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0)
+    let next = Math.max(Number(state.nextId.question) || 1, maxId + 1)
+    for (const item of QUESTION_BANK) {
+      const key = keyOf(item)
+      if (existing.has(key)) continue
+      state.questions.push({
+        id: next++,
+        subject: item.subject,
+        grade: item.grade,
+        content: item.content,
+        answer: String(item.answer),
+        explanation: item.explanation,
+        options: [...(item.options || [])],
+        accept: [...(item.accept || [])],
+        source: 'bank',
+        created_at: isoAt(-30, 9, 0, now())
+      })
+      existing.add(key)
+    }
+    state.nextId.question = Math.max(Number(state.nextId.question) || 1, next)
   }
 
   function commit() {

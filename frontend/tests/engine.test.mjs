@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import { createEngine, CHILD_ID, STATE_VERSION } from '../src/services/engineCore.js'
 import { createMemoryStorage } from '../src/services/storage.js'
+import { QUESTION_BANK } from '../src/data/questions.js'
 import { aiAnswer, safeCalculate } from '../src/services/aiTutor.js'
 import { dateOffset, isAnswerCorrect, levelInfo, normalizeAnswer } from '../src/utils/format.js'
 
@@ -13,6 +14,22 @@ function fresh() {
   const engine = createEngine(storage, { now: () => new Date(NOW) })
   return { engine, storage }
 }
+
+test('旧账号加载时会补齐新增题库', () => {
+  const storage = createMemoryStorage(null)
+  createEngine(storage, { now: () => new Date(NOW), seedDemo: false })
+  const raw = JSON.parse(storage.read())
+  raw.questions = raw.questions.filter((item) => item.source === 'bank').slice(0, 54)
+  raw.nextId.question = 55
+  storage.write(JSON.stringify(raw))
+
+  createEngine(storage, { now: () => new Date(NOW), seedDemo: false })
+  const upgraded = JSON.parse(storage.read())
+  const bank = upgraded.questions.filter((item) => item.source === 'bank')
+  assert.equal(bank.length, QUESTION_BANK.length)
+  assert.equal(new Set(bank.map((item) => item.id)).size, bank.length)
+  assert.equal(new Set(bank.map((item) => item.content)).size, bank.length)
+})
 
 test('初始数据：孩子档案、示例记录和错题都已就绪', () => {
   const { engine } = fresh()

@@ -217,7 +217,7 @@ tongban_project/
 │  │  ├─ styles/app.css             # 设计系统（颜色、卡片、按钮、表单）
 │  │  ├─ pages.json / manifest.json # 路由与打包配置
 │  │  └─ App.vue / main.js
-│  ├─ tests/                        # 27 项单测（引擎 + 账号密码）
+│  ├─ tests/                        # 28 项单测（引擎 + 账号密码）
 │  └─ vite.config.js
 ├─ backend/                         # 产品版 FastAPI 后端
 │  ├─ main.py / models.py / schemas.py / database.py / security.py
@@ -399,7 +399,7 @@ npm run build:mp-weixin
 ```bash
 cd frontend
 npm test
-# 27 项全部通过（17 项引擎 + 10 项账号 / 密码）
+# 28 项全部通过（18 项引擎 + 10 项账号 / 密码）
 ```
 
 后端（鉴权、账号隔离、状态同步、AI 降级等）：
